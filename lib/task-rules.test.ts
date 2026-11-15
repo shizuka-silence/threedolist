@@ -116,3 +116,53 @@ describe("normalizeAiPrepOutput (bounds AI output)", () => {
     expect(() => normalizeAiPrepOutput("nope")).toThrow();
   });
 });
+
+describe("normalizeAiPrepOutput with selected parts", () => {
+  const raw = {
+    estimated_minutes: 25,
+    pitfalls: ["Forgot to attach file", "Wrong recipient"],
+    clarifying_questions: ["Who is this for?", "What is the deadline?"],
+  };
+  const none = { estimate: false, questions: false, pitfalls: false };
+
+  it("returns only the estimate when only estimate is selected", () => {
+    expect(normalizeAiPrepOutput(raw, { ...none, estimate: true })).toEqual({
+      estimatedMinutes: 25,
+      pitfalls: [],
+      clarifyingQuestions: [],
+    });
+  });
+
+  it("returns only pitfalls when only pitfalls are selected", () => {
+    expect(normalizeAiPrepOutput(raw, { ...none, pitfalls: true })).toEqual({
+      estimatedMinutes: null,
+      pitfalls: raw.pitfalls,
+      clarifyingQuestions: [],
+    });
+  });
+
+  it("returns only questions when only questions are selected", () => {
+    expect(normalizeAiPrepOutput(raw, { ...none, questions: true })).toEqual({
+      estimatedMinutes: null,
+      pitfalls: [],
+      clarifyingQuestions: raw.clarifying_questions,
+    });
+  });
+
+  it("ignores garbage in parts that were not selected", () => {
+    const messy = { estimated_minutes: "soon", pitfalls: ["a", "b"], clarifying_questions: null };
+    expect(normalizeAiPrepOutput(messy, { ...none, pitfalls: true })).toEqual({
+      estimatedMinutes: null,
+      pitfalls: ["a", "b"],
+      clarifyingQuestions: [],
+    });
+  });
+
+  it("still validates a selected part", () => {
+    expect(() => normalizeAiPrepOutput({ ...raw, pitfalls: ["only one"] }, { ...none, pitfalls: true })).toThrow();
+  });
+
+  it("throws when no part is selected", () => {
+    expect(() => normalizeAiPrepOutput(raw, none)).toThrow();
+  });
+});
