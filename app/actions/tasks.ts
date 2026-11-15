@@ -1,10 +1,10 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { taskProofs, tasks } from "@/db/schema";
-import { assertCanComplete } from "@/lib/task-rules";
+import { taskProofs, tasks, timeLogs } from "@/db/schema";
+import { assertCanComplete, calculateLoggedMinutes } from "@/lib/task-rules";
 import { createClient } from "@/lib/supabase/server";
 
 // Drizzle bypasses RLS, so every action below must call requireUser() and filter by user.id.
@@ -101,6 +101,45 @@ export async function completeTask(taskId: string): Promise<Result> {
     .update(tasks)
     .set({ status: "completed", completedAt: new Date() })
     .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)));
+  revalidatePath("/");
+  return {};
+}
+
+export async function startTaskTimer(taskId: string): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+
+  const task = await findOwnedTask(user.id, taskId);
+  if (!task) return { error: "Task not found." };
+  if (task.activeTimerStartedAt) return { error: "Timer is already running." };
+
+  await db.update(tasks).set({ activeTimerStartedAt: new Date() }).where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)));
+  revalidatePath("/");
+  return {};
+}
+
+export async function stopTaskTimer(taskId: string, trimmedIdleMinutes: number): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+  if (!Number.isFinite(trimmedIdleMinutes) || trimmedIdleMinutes < 0 || !Number.isInteger(trimmedIdleMinutes)) {
+    return { error: "Idle minutes must be a whole number, 0 or more." };
+  }
+
+  const task = await findOwnedTask(user.id, taskId);
+  if (!task) return { error: "Task not found." };
+  const startedAt = task.activeTimerStartedAt;
+  if (!startedAt) return { error: "Timer is not running." };
+
+  const endedAt = new Date();
+  const durationMinutes = calculateLoggedMinutes({ startedAt, endedAt, trimmedIdleMinutes });
+
+  await db.transaction(async (tx) => {
+    await tx.insert(timeLogs).values({ taskId, startedAt, endedAt, durationMinutes });
+    await tx
+      .update(tasks)
+      .set({ actualMinutes: sql`${tasks.actualMinutes} + ${durationMinutes}`, activeTimerStartedAt: null })
+      .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)));
+  });
   revalidatePath("/");
   return {};
 }

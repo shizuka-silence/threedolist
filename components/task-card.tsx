@@ -1,24 +1,66 @@
 "use client";
 
 import imageCompression from "browser-image-compression";
-import { useRef, useState, useTransition } from "react";
-import { addTaskProof, completeTask, deleteTask } from "@/app/actions/tasks";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { addTaskProof, completeTask, deleteTask, startTaskTimer, stopTaskTimer } from "@/app/actions/tasks";
 import { Button } from "@/components/ui/button";
+import { calculateLoggedMinutes } from "@/lib/task-rules";
 
 type Props = {
   id: string;
   title: string;
   completionType: "tick" | "proof";
   estimatedMinutes: number | null;
+  actualMinutes: number;
+  activeTimerStartedAt: string | null; // ISO
   proofCount: number;
+  thumbnails: { id: string; url: string }[];
 };
 
-export function TaskCard({ id, title, completionType, estimatedMinutes, proofCount }: Props) {
+export function TaskCard({
+  id, title, completionType, estimatedMinutes, actualMinutes, activeTimerStartedAt, proofCount, thumbnails,
+}: Props) {
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [now, setNow] = useState<number | null>(null); // null until mounted, avoids a hydration mismatch
+  const [stopping, setStopping] = useState(false);
+  const [trim, setTrim] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
+  const hovered = useRef(false);
+  const card = useRef<HTMLLIElement>(null);
   const isProof = completionType === "proof";
+
+  const startedAt = activeTimerStartedAt ? new Date(activeTimerStartedAt) : null;
+  const elapsedMs = startedAt && now ? Math.max(0, now - startedAt.getTime()) : 0;
+  const elapsedMinutes = Math.floor(elapsedMs / 60_000);
+  const clock = [Math.floor(elapsedMs / 3_600_000), Math.floor(elapsedMs / 60_000) % 60, Math.floor(elapsedMs / 1000) % 60]
+    .map((n) => String(n).padStart(2, "0"))
+    .join(":");
+  const trimmed = Math.min(trim, elapsedMinutes);
+  const netMinutes =
+    startedAt && now ? calculateLoggedMinutes({ startedAt, endedAt: new Date(now), trimmedIdleMinutes: trimmed }) : 0;
+
+  useEffect(() => {
+    if (!activeTimerStartedAt) return;
+    setNow(Date.now());
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [activeTimerStartedAt]);
+
+  // Paste an image while hovering or focused inside this proof card.
+  useEffect(() => {
+    if (!isProof) return;
+    function onPaste(event: ClipboardEvent) {
+      if (!hovered.current && !card.current?.contains(document.activeElement)) return;
+      const file = Array.from(event.clipboardData?.files ?? []).find((f) => f.type.startsWith("image/"));
+      if (!file) return;
+      event.preventDefault();
+      uploadPhoto(file);
+    }
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  });
 
   function run(action: () => Promise<{ error?: string }>, onSuccess?: () => void) {
     startTransition(async () => {
@@ -49,13 +91,18 @@ export function TaskCard({ id, title, completionType, estimatedMinutes, proofCou
   }
 
   return (
-    <li className="flex flex-col gap-3 rounded-lg border p-3">
+    <li
+      ref={card}
+      className="flex flex-col gap-3 rounded-lg border p-3"
+      onMouseEnter={() => (hovered.current = true)}
+      onMouseLeave={() => (hovered.current = false)}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="break-words font-medium">{title}</p>
           <p className="text-sm text-muted-foreground">
             {isProof ? "Proof" : "Tick"}
-            {estimatedMinutes ? ` · Est ${estimatedMinutes}m` : ""}
+            {` · Logged ${actualMinutes}m${estimatedMinutes ? ` / ${estimatedMinutes}m` : ""}`}
             {isProof ? ` · ${proofCount} attached` : ""}
           </p>
         </div>
@@ -64,8 +111,61 @@ export function TaskCard({ id, title, completionType, estimatedMinutes, proofCou
         </Button>
       </div>
 
+      {!startedAt ? (
+        <Button type="button" variant="outline" size="lg" disabled={pending} onClick={() => run(() => startTaskTimer(id))}>
+          Start Timer
+        </Button>
+      ) : !stopping ? (
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-mono text-lg" aria-live="off">{clock}</span>
+          <Button type="button" variant="outline" size="lg" onClick={() => { setTrim(0); setStopping(true); }}>
+            Stop
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2 rounded-md border p-2">
+          <p className="text-sm">
+            Elapsed {clock} · trim idle: <strong>{trimmed}m</strong> · will log <strong>{netMinutes}m</strong>
+          </p>
+          <input
+            type="range"
+            min={0}
+            max={elapsedMinutes}
+            value={trimmed}
+            onChange={(e) => setTrim(Number(e.target.value))}
+            aria-label="Idle minutes to trim"
+          />
+          <div className="flex flex-wrap gap-2">
+            {[5, 15].map((m) => (
+              <Button key={m} type="button" variant="outline" size="sm" onClick={() => setTrim(Math.min(elapsedMinutes, trimmed + m))}>
+                -{m}m
+              </Button>
+            ))}
+            <Button type="button" variant="ghost" size="sm" onClick={() => setStopping(false)}>Keep running</Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={pending}
+              onClick={() => run(() => stopTaskTimer(id, trimmed), () => setStopping(false))}
+            >
+              Confirm stop
+            </Button>
+          </div>
+        </div>
+      )}
+
       {isProof && (
         <div className="flex flex-col gap-2">
+          {thumbnails.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {thumbnails.map((t) => (
+                <a key={t.id} href={t.url} target="_blank" rel="noreferrer">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL */}
+                  <img src={t.url} alt="Proof" className="h-16 w-16 rounded-md border object-cover" />
+                </a>
+              ))}
+            </div>
+          )}
           <input
             ref={fileInput}
             type="file"
@@ -79,7 +179,7 @@ export function TaskCard({ id, title, completionType, estimatedMinutes, proofCou
             }}
           />
           <Button type="button" variant="outline" size="lg" disabled={pending} onClick={() => fileInput.current?.click()}>
-            Add photo
+            Add photo (or Ctrl+V)
           </Button>
           <form onSubmit={addNote} className="flex gap-2">
             <input

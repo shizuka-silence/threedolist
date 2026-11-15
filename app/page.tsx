@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -7,7 +7,7 @@ import { AddTaskForm } from "@/components/add-task-form";
 import { TaskCard } from "@/components/task-card";
 import { Button } from "@/components/ui/button";
 import { db } from "@/db";
-import { tasks } from "@/db/schema";
+import { taskProofs, tasks } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 
 export default function Home() {
@@ -33,12 +33,29 @@ async function Dashboard() {
       title: tasks.title,
       completionType: tasks.completionType,
       estimatedMinutes: tasks.estimatedMinutes,
+      actualMinutes: tasks.actualMinutes,
+      activeTimerStartedAt: tasks.activeTimerStartedAt,
       status: tasks.status,
       proofCount,
     })
     .from(tasks)
     .where(eq(tasks.userId, user.id))
     .orderBy(desc(tasks.createdAt));
+
+  // Private bucket: sign image proof paths for 1 hour so thumbnails can render.
+  const imageProofs = await db
+    .select({ id: taskProofs.id, taskId: taskProofs.taskId, path: taskProofs.storagePathOrUrl })
+    .from(taskProofs)
+    .innerJoin(tasks, eq(tasks.id, taskProofs.taskId))
+    .where(and(eq(tasks.userId, user.id), eq(taskProofs.type, "image")));
+  const { data: signed } = await supabase.storage
+    .from("proof-uploads")
+    .createSignedUrls(imageProofs.map((p) => p.path), 3600);
+  const thumbnailsByTask = new Map<string, { id: string; url: string }[]>();
+  imageProofs.forEach((p, i) => {
+    const url = signed?.[i]?.signedUrl;
+    if (url) thumbnailsByTask.set(p.taskId, [...(thumbnailsByTask.get(p.taskId) ?? []), { id: p.id, url }]);
+  });
 
   const active = rows.filter((t) => t.status !== "completed");
   const completed = rows.filter((t) => t.status === "completed");
@@ -59,7 +76,12 @@ async function Dashboard() {
 
       <ul className="flex flex-col gap-3">
         {active.map((task) => (
-          <TaskCard key={task.id} {...task} />
+          <TaskCard
+            key={task.id}
+            {...task}
+            activeTimerStartedAt={task.activeTimerStartedAt?.toISOString() ?? null}
+            thumbnails={thumbnailsByTask.get(task.id) ?? []}
+          />
         ))}
         {active.length === 0 && <p className="text-muted-foreground">Nothing to do. Add a task above.</p>}
       </ul>
