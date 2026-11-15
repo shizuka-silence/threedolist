@@ -14,3 +14,15 @@ export function calculateLoggedMinutes(input: {
   const elapsedMinutes = (input.endedAt.getTime() - input.startedAt.getTime()) / 60_000;
   return Math.max(0, Math.round(elapsedMinutes - input.trimmedIdleMinutes));
 }
+
+/** AI only fills an empty estimate; any user-entered value (even 0) is kept. */
+export function resolveAiEstimate(currentEstimate: number | null, aiEstimate: number): number {
+  throw new Error("not implemented");
+}
+
+export type AiPrep = { estimatedMinutes: number; pitfalls: string[]; clarifyingQuestions: string[] };
+
+/** Validates raw AI output: trims/drops blank strings, caps pitfalls at 4 and questions at 3, rounds the estimate to a whole number >= 1. Throws if too little usable output. */
+export function normalizeAiPrepOutput(raw: unknown): AiPrep {
+  throw new Error("not implemented");
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertCanComplete, calculateLoggedMinutes } from "./task-rules";
+import { assertCanComplete, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate } from "./task-rules";
 
 describe("assertCanComplete (proof-of-work gate)", () => {
   it("throws for a proof task with no proofs", () => {
@@ -42,5 +42,77 @@ describe("calculateLoggedMinutes (timer + idle trim)", () => {
 
   it("clamps to 0 when endedAt is before startedAt", () => {
     expect(calculateLoggedMinutes({ startedAt, endedAt: minutesLater(-5), trimmedIdleMinutes: 0 })).toBe(0);
+  });
+});
+
+describe("resolveAiEstimate (never overwrite a manual estimate)", () => {
+  it("adopts the AI estimate when the current estimate is null", () => {
+    expect(resolveAiEstimate(null, 30)).toBe(30);
+  });
+
+  it("keeps a manual estimate when AI suggests a different one", () => {
+    expect(resolveAiEstimate(45, 30)).toBe(45);
+  });
+
+  it("keeps a manual estimate of 0", () => {
+    expect(resolveAiEstimate(0, 30)).toBe(0);
+  });
+});
+
+describe("normalizeAiPrepOutput (bounds AI output)", () => {
+  const valid = {
+    estimated_minutes: 25,
+    pitfalls: ["Forgot to attach file", "Wrong recipient"],
+    clarifying_questions: ["Who is this for?", "What is the deadline?"],
+  };
+
+  it("maps a valid payload to camelCase fields", () => {
+    expect(normalizeAiPrepOutput(valid)).toEqual({
+      estimatedMinutes: 25,
+      pitfalls: valid.pitfalls,
+      clarifyingQuestions: valid.clarifying_questions,
+    });
+  });
+
+  it("keeps only the first 4 pitfalls", () => {
+    const out = normalizeAiPrepOutput({ ...valid, pitfalls: ["a", "b", "c", "d", "e", "f"] });
+    expect(out.pitfalls).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("keeps only the first 3 clarifying questions", () => {
+    const out = normalizeAiPrepOutput({ ...valid, clarifying_questions: ["a?", "b?", "c?", "d?"] });
+    expect(out.clarifyingQuestions).toEqual(["a?", "b?", "c?"]);
+  });
+
+  it("trims strings and drops blank ones before counting", () => {
+    const out = normalizeAiPrepOutput({ ...valid, pitfalls: ["  a  ", "", "   ", "b"] });
+    expect(out.pitfalls).toEqual(["a", "b"]);
+  });
+
+  it("throws when fewer than 2 usable pitfalls remain", () => {
+    expect(() => normalizeAiPrepOutput({ ...valid, pitfalls: ["a", " "] })).toThrow();
+  });
+
+  it("throws when fewer than 2 usable clarifying questions remain", () => {
+    expect(() => normalizeAiPrepOutput({ ...valid, clarifying_questions: ["only one?"] })).toThrow();
+  });
+
+  it("rounds a fractional estimate to a whole number", () => {
+    expect(normalizeAiPrepOutput({ ...valid, estimated_minutes: 12.6 }).estimatedMinutes).toBe(13);
+  });
+
+  it("raises a tiny positive estimate to 1", () => {
+    expect(normalizeAiPrepOutput({ ...valid, estimated_minutes: 0.2 }).estimatedMinutes).toBe(1);
+  });
+
+  it("throws for a zero, negative or non-numeric estimate", () => {
+    expect(() => normalizeAiPrepOutput({ ...valid, estimated_minutes: 0 })).toThrow();
+    expect(() => normalizeAiPrepOutput({ ...valid, estimated_minutes: -5 })).toThrow();
+    expect(() => normalizeAiPrepOutput({ ...valid, estimated_minutes: "20" })).toThrow();
+  });
+
+  it("throws for non-object input", () => {
+    expect(() => normalizeAiPrepOutput(null)).toThrow();
+    expect(() => normalizeAiPrepOutput("nope")).toThrow();
   });
 });
