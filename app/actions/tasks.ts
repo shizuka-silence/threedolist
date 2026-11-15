@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { taskProofs, taskSubtasks, tasks, timeLogs } from "@/db/schema";
@@ -143,6 +143,36 @@ export async function stopTaskTimer(taskId: string, trimmedIdleMinutes: number):
       .set({ actualMinutes: sql`${tasks.actualMinutes} + ${durationMinutes}`, activeTimerStartedAt: null })
       .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)));
   });
+  revalidatePath("/");
+  return {};
+}
+
+export async function scheduleTask(taskId: string, scheduledStart: Date): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+  if (!(scheduledStart instanceof Date) || Number.isNaN(scheduledStart.getTime())) return { error: "Invalid time." };
+
+  // status <> completed: a finished task must never slide back onto the calendar.
+  const updated = await db
+    .update(tasks)
+    .set({ scheduledStart, status: "scheduled" })
+    .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id), ne(tasks.status, "completed")))
+    .returning({ id: tasks.id });
+  if (updated.length === 0) return { error: "Task not found." };
+  revalidatePath("/");
+  return {};
+}
+
+export async function unscheduleTask(taskId: string): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+
+  const updated = await db
+    .update(tasks)
+    .set({ scheduledStart: null, status: "todo" })
+    .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id), ne(tasks.status, "completed")))
+    .returning({ id: tasks.id });
+  if (updated.length === 0) return { error: "Task not found." };
   revalidatePath("/");
   return {};
 }

@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { signOut } from "@/app/login/actions";
 import { AddTaskForm } from "@/components/add-task-form";
 import { BrainDumpBar } from "@/components/brain-dump-bar";
+import { DayCalendar } from "@/components/day-calendar";
 import { TaskCard } from "@/components/task-card";
 import { TriageCard } from "@/components/triage-card";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,9 @@ export default function Home({ searchParams }: { searchParams: Promise<{ tab?: s
 }
 
 async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const showTriage = (await searchParams).tab === "triage";
+  const tab = (await searchParams).tab;
+  const showTriage = tab === "triage";
+  const showCalendar = tab === "calendar";
   await connection(); // per-user page: render at request time (auth/session code reads Date.now())
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -40,6 +43,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
       actualMinutes: tasks.actualMinutes,
       activeTimerStartedAt: tasks.activeTimerStartedAt,
       status: tasks.status,
+      scheduledStart: tasks.scheduledStart,
       aiClarifyingQuestions: tasks.aiClarifyingQuestions,
       proofCount,
     })
@@ -101,13 +105,24 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
       </header>
 
       <nav className="flex gap-2">
-        <Link href="/" className={tabClass(!showTriage)}>Tasks</Link>
+        <Link href="/" className={tabClass(!showTriage && !showCalendar)}>Tasks</Link>
+        <Link href="/?tab=calendar" className={tabClass(showCalendar)}>Calendar</Link>
         <Link href="/?tab=triage" className={tabClass(showTriage)}>
           Triage{pendingTriage.length > 0 && ` (${pendingTriage.length})`}
         </Link>
       </nav>
 
-      {showTriage ? (
+      {showCalendar ? (
+        <DayCalendar
+          tasks={active.map((t) => ({
+            id: t.id,
+            title: t.title,
+            estimatedMinutes: t.estimatedMinutes,
+            actualMinutes: t.actualMinutes,
+            scheduledStart: t.scheduledStart?.toISOString() ?? null,
+          }))}
+        />
+      ) : showTriage ? (
         <>
           <BrainDumpBar />
           <ul className="flex flex-col gap-3">
