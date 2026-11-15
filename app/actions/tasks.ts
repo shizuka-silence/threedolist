@@ -5,7 +5,9 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { taskProofs, taskSubtasks, tasks, timeLogs } from "@/db/schema";
 import { generateTaskPrep } from "@/lib/ai";
-import { assertCanComplete, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate } from "@/lib/task-rules";
+import {
+  assertCanComplete, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate, type AiPrepParts,
+} from "@/lib/task-rules";
 import { createClient } from "@/lib/supabase/server";
 
 // Drizzle bypasses RLS, so every action below must call requireUser() and filter by user.id.
@@ -179,33 +181,34 @@ export async function updateTaskEstimate(taskId: string, estimatedMinutes: numbe
 }
 
 // Runs only when the user clicks AI Prep; never call this from task creation.
-export async function runAiTaskPrep(taskId: string): Promise<Result> {
+export async function runAiTaskPrep(taskId: string, parts: AiPrepParts): Promise<Result> {
   const { user } = await requireUser();
   if (!user) return { error: "Not signed in." };
+  if (!parts.estimate && !parts.questions && !parts.pitfalls) return { error: "Pick at least one thing for AI to provide." };
 
   const task = await findOwnedTask(user.id, taskId);
   if (!task) return { error: "Task not found." };
 
   let prep;
   try {
-    prep = normalizeAiPrepOutput(await generateTaskPrep(task));
+    prep = normalizeAiPrepOutput(await generateTaskPrep(task, parts), parts);
   } catch (e) {
     return { error: `AI Prep failed: ${(e as Error).message}` };
   }
 
   await db.transaction(async (tx) => {
-    await tx
-      .update(tasks)
-      .set({
-        estimatedMinutes: resolveAiEstimate(task.estimatedMinutes, prep.estimatedMinutes),
-        aiClarifyingQuestions: prep.clarifyingQuestions,
-      })
-      .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)));
-    // A second AI Prep click replaces unchecked pitfalls instead of duplicating them.
-    await tx.delete(taskSubtasks).where(and(eq(taskSubtasks.taskId, taskId), eq(taskSubtasks.source, "ai_pitfall"), eq(taskSubtasks.isCompleted, false)));
-    await tx
-      .insert(taskSubtasks)
-      .values(prep.pitfalls.map((label) => ({ taskId, label, source: "ai_pitfall" as const })));
+    // Only touch what was requested; a pitfalls-only run must not change the estimate or questions.
+    const changes: Partial<typeof tasks.$inferInsert> = {};
+    if (prep.estimatedMinutes !== null) changes.estimatedMinutes = resolveAiEstimate(task.estimatedMinutes, prep.estimatedMinutes);
+    if (parts.questions) changes.aiClarifyingQuestions = prep.clarifyingQuestions;
+    if (Object.keys(changes).length > 0) {
+      await tx.update(tasks).set(changes).where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)));
+    }
+    if (parts.pitfalls) {
+      // A second run replaces unchecked pitfalls instead of duplicating them.
+      await tx.delete(taskSubtasks).where(and(eq(taskSubtasks.taskId, taskId), eq(taskSubtasks.source, "ai_pitfall"), eq(taskSubtasks.isCompleted, false)));
+      await tx.insert(taskSubtasks).values(prep.pitfalls.map((label) => ({ taskId, label, source: "ai_pitfall" as const })));
+    }
   });
   revalidatePath("/");
   return {};

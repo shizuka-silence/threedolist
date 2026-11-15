@@ -20,7 +20,8 @@ export function resolveAiEstimate(currentEstimate: number | null, aiEstimate: nu
   return currentEstimate ?? aiEstimate;
 }
 
-export type AiPrep = { estimatedMinutes: number; pitfalls: string[]; clarifyingQuestions: string[] };
+export type AiPrepParts = { estimate: boolean; questions: boolean; pitfalls: boolean };
+export type AiPrep = { estimatedMinutes: number | null; pitfalls: string[]; clarifyingQuestions: string[] };
 
 function usableStrings(value: unknown, max: number, what: string): string[] {
   const items = Array.isArray(value)
@@ -30,16 +31,29 @@ function usableStrings(value: unknown, max: number, what: string): string[] {
   return items.slice(0, max);
 }
 
-/** Validates raw AI output: trims/drops blank strings, caps pitfalls at 4 and questions at 3, rounds the estimate to a whole number >= 1. Throws if too little usable output. */
-export function normalizeAiPrepOutput(raw: unknown): AiPrep {
+/**
+ * Validates raw AI output for the selected parts only (unselected parts come back null / []).
+ * Trims/drops blank strings, caps pitfalls at 4 and questions at 3, rounds the estimate to a whole number >= 1.
+ * Throws if no part is selected or a selected part has too little usable output.
+ */
+export function normalizeAiPrepOutput(
+  raw: unknown,
+  parts: AiPrepParts = { estimate: true, questions: true, pitfalls: true },
+): AiPrep {
+  if (!parts.estimate && !parts.questions && !parts.pitfalls) throw new Error("Pick at least one thing for AI to provide.");
   const input = (raw ?? {}) as Record<string, unknown>;
-  const minutes = input.estimated_minutes;
-  if (typeof minutes !== "number" || !Number.isFinite(minutes) || minutes <= 0) {
-    throw new Error("AI returned an invalid estimate.");
+
+  let estimatedMinutes: number | null = null;
+  if (parts.estimate) {
+    const minutes = input.estimated_minutes;
+    if (typeof minutes !== "number" || !Number.isFinite(minutes) || minutes <= 0) {
+      throw new Error("AI returned an invalid estimate.");
+    }
+    estimatedMinutes = Math.max(1, Math.round(minutes));
   }
   return {
-    estimatedMinutes: Math.max(1, Math.round(minutes)),
-    pitfalls: usableStrings(input.pitfalls, 4, "pitfalls"),
-    clarifyingQuestions: usableStrings(input.clarifying_questions, 3, "questions"),
+    estimatedMinutes,
+    pitfalls: parts.pitfalls ? usableStrings(input.pitfalls, 4, "pitfalls") : [],
+    clarifyingQuestions: parts.questions ? usableStrings(input.clarifying_questions, 3, "questions") : [],
   };
 }

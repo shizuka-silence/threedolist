@@ -28,6 +28,7 @@ export function TaskCard({
 }: Props) {
   const [note, setNote] = useState("");
   const [subtaskLabel, setSubtaskLabel] = useState("");
+  const [aiParts, setAiParts] = useState({ estimate: false, questions: false, pitfalls: false });
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [now, setNow] = useState<number | null>(null); // null until mounted, avoids a hydration mismatch
@@ -226,7 +227,24 @@ export function TaskCard({
       )}
 
       <div className="flex flex-col gap-2">
-        <Button type="button" variant="outline" disabled={pending} onClick={() => run(() => runAiTaskPrep(id))}>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          {([["estimate", "Time estimate"], ["questions", "Questions"], ["pitfalls", "Pitfalls"]] as const).map(([part, label]) => (
+            <label key={part} className="flex items-center gap-1">
+              <input
+                type="checkbox"
+                checked={aiParts[part]}
+                onChange={(e) => setAiParts({ ...aiParts, [part]: e.target.checked })}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={pending || !(aiParts.estimate || aiParts.questions || aiParts.pitfalls)}
+          onClick={() => run(() => runAiTaskPrep(id, aiParts), () => setAiParts({ estimate: false, questions: false, pitfalls: false }))}
+        >
           {pending ? "Working…" : "AI Prep"}
         </Button>
         {aiClarifyingQuestions && aiClarifyingQuestions.length > 0 && (
