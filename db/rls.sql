@@ -62,3 +62,13 @@ create policy "owner full access" on time_logs
   for all to authenticated
   using (exists (select 1 from tasks t where t.id = time_logs.task_id and t.user_id = (select auth.uid())))
   with check (exists (select 1 from tasks t where t.id = time_logs.task_id and t.user_id = (select auth.uid())));
+
+-- Storage: private proof bucket; users may only touch files under their own `<user_id>/` folder.
+insert into storage.buckets (id, name, public) values ('proof-uploads', 'proof-uploads', false)
+  on conflict (id) do nothing;
+
+drop policy if exists "proof-uploads owner access" on storage.objects;
+create policy "proof-uploads owner access" on storage.objects
+  for all to authenticated
+  using (bucket_id = 'proof-uploads' and (storage.foldername(name))[1] = (select auth.uid())::text)
+  with check (bucket_id = 'proof-uploads' and (storage.foldername(name))[1] = (select auth.uid())::text);

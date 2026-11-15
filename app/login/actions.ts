@@ -26,3 +26,9 @@ export async function signUp(formData: FormData) {
   if (!data.session) backToLogin("message", "Check your email to confirm your account, then sign in.");
   redirect("/");
 }
+
+export async function signOut() {
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  redirect("/login");
+}

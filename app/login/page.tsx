@@ -1,12 +1,21 @@
+import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import { signIn, signUp } from "./actions";
 
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ error?: string; message?: string }>;
-}) {
+type SearchParams = Promise<{ error?: string; message?: string }>;
+
+// searchParams is runtime data, so it is read inside Suspense to keep the form in the static shell.
+async function Feedback({ searchParams }: { searchParams: SearchParams }) {
   const { error, message } = await searchParams;
+  return (
+    <>
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      {message && <p role="status" className="text-sm text-muted-foreground">{message}</p>}
+    </>
+  );
+}
+
+export default function LoginPage({ searchParams }: { searchParams: SearchParams }) {
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center gap-6 p-6">
@@ -29,8 +38,9 @@ export default async function LoginPage({
           required
           className="h-12 rounded-md border bg-background px-3 text-base"
         />
-        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-        {message && <p role="status" className="text-sm text-muted-foreground">{message}</p>}
+        <Suspense>
+          <Feedback searchParams={searchParams} />
+        </Suspense>
         <Button type="submit" formAction={signIn} size="lg">Sign in</Button>
         <Button type="submit" formAction={signUp} size="lg" variant="outline">Sign up</Button>
       </form>

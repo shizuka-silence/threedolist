@@ -22,6 +22,7 @@ export const projectFiles = pgTable("project_files", {
 export const tasks = pgTable("tasks", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull(), // Supabase auth.users.id; RLS key for standalone tasks
+  createdAt: createdAt(),
   // Deleting a folder must not delete finished work (receipt log is non-destructive).
   projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
   title: text("title").notNull(),
