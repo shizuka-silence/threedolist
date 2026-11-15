@@ -1,24 +1,28 @@
 import { and, desc, eq, sql } from "drizzle-orm";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { signOut } from "@/app/login/actions";
 import { AddTaskForm } from "@/components/add-task-form";
+import { BrainDumpBar } from "@/components/brain-dump-bar";
 import { TaskCard } from "@/components/task-card";
+import { TriageCard } from "@/components/triage-card";
 import { Button } from "@/components/ui/button";
 import { db } from "@/db";
-import { taskProofs, tasks } from "@/db/schema";
+import { taskProofs, tasks, triageItems } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 
-export default function Home() {
+export default function Home({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   return (
     <Suspense fallback={<p className="p-4 text-muted-foreground">Loading…</p>}>
-      <Dashboard />
+      <Dashboard searchParams={searchParams} />
     </Suspense>
   );
 }
 
-async function Dashboard() {
+async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const showTriage = (await searchParams).tab === "triage";
   await connection(); // per-user page: render at request time (auth/session code reads Date.now())
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -57,6 +61,17 @@ async function Dashboard() {
     if (url) thumbnailsByTask.set(p.taskId, [...(thumbnailsByTask.get(p.taskId) ?? []), { id: p.id, url }]);
   });
 
+  const pendingTriage = await db
+    .select({
+      id: triageItems.id,
+      sourceSubject: triageItems.sourceSubject,
+      summary: triageItems.summary,
+      suggestedAction: triageItems.suggestedAction,
+    })
+    .from(triageItems)
+    .where(and(eq(triageItems.userId, user.id), eq(triageItems.status, "pending")))
+    .orderBy(desc(triageItems.createdAt));
+
   const active = rows.filter((t) => t.status !== "completed");
   const completed = rows.filter((t) => t.status === "completed");
 
@@ -72,6 +87,23 @@ async function Dashboard() {
         </form>
       </header>
 
+      <nav className="flex gap-2">
+        <Link href="/" className={tabClass(!showTriage)}>Tasks</Link>
+        <Link href="/?tab=triage" className={tabClass(showTriage)}>
+          Triage{pendingTriage.length > 0 && ` (${pendingTriage.length})`}
+        </Link>
+      </nav>
+
+      {showTriage ? (
+        <>
+          <BrainDumpBar />
+          <ul className="flex flex-col gap-3">
+            {pendingTriage.map((item) => <TriageCard key={item.id} {...item} />)}
+            {pendingTriage.length === 0 && <p className="text-muted-foreground">Triage is empty. Dump a thought above.</p>}
+          </ul>
+        </>
+      ) : (
+        <>
       <AddTaskForm />
 
       <ul className="flex flex-col gap-3">
@@ -97,6 +129,11 @@ async function Dashboard() {
           ))}
         </ul>
       </details>
+        </>
+      )}
     </main>
   );
 }
+
+const tabClass = (selected: boolean) =>
+  `flex h-10 flex-1 items-center justify-center rounded-md border text-sm font-medium ${selected ? "bg-primary text-primary-foreground" : ""}`;

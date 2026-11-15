@@ -66,8 +66,8 @@ export const triageItems = pgTable("triage_items", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull(), // Supabase auth.users.id; RLS key
   sourceSubject: text("source_subject").notNull(),
-  summary: text("summary").notNull(),
-  suggestedAction: text("suggested_action").notNull(),
-  status: text("status", { enum: ["pending", "accepted", "dismissed"] }).notNull().default("pending"),
+  summary: text("summary"),
+  suggestedAction: text("suggested_action"),
+  status: text("status", { enum: ["pending", "promoted", "dismissed"] }).notNull().default("pending"),
   createdAt: createdAt(),
 });

@@ -31,5 +31,5 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Skip static assets and the triage webhook (it uses its own Bearer token, not a session).
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|api/webhooks|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|api/webhooks|api/triage|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
 };
