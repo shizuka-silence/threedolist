@@ -7,14 +7,19 @@ import { signOut } from "@/app/login/actions";
 import { AddTaskForm } from "@/components/add-task-form";
 import { BrainDumpBar } from "@/components/brain-dump-bar";
 import { DayCalendar } from "@/components/day-calendar";
+import { DraggableTask } from "@/components/draggable-task";
+import { ProjectDnd } from "@/components/project-dnd";
+import { ProjectStrip } from "@/components/project-strip";
+import { ProjectWorkspace } from "@/components/project-workspace";
 import { TaskCard } from "@/components/task-card";
 import { TriageCard } from "@/components/triage-card";
 import { Button } from "@/components/ui/button";
 import { db } from "@/db";
-import { taskProofs, taskSubtasks, tasks, triageItems } from "@/db/schema";
+import { projectFiles, projects, taskProofs, taskSubtasks, tasks, triageItems } from "@/db/schema";
+import { filterTasksByProject, isProjectLink } from "@/lib/project-rules";
 import { createClient } from "@/lib/supabase/server";
 
-export default function Home({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+export default function Home({ searchParams }: { searchParams: Promise<{ tab?: string; project?: string }> }) {
   return (
     <Suspense fallback={<p className="p-4 text-muted-foreground">Loading…</p>}>
       <Dashboard searchParams={searchParams} />
@@ -22,8 +27,8 @@ export default function Home({ searchParams }: { searchParams: Promise<{ tab?: s
   );
 }
 
-async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const tab = (await searchParams).tab;
+async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: string; project?: string }> }) {
+  const { tab, project: projectParam } = await searchParams;
   const showTriage = tab === "triage";
   const showCalendar = tab === "calendar";
   await connection(); // per-user page: render at request time (auth/session code reads Date.now())
@@ -37,6 +42,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
   const rows = await db
     .select({
       id: tasks.id,
+      projectId: tasks.projectId,
       title: tasks.title,
       completionType: tasks.completionType,
       estimatedMinutes: tasks.estimatedMinutes,
@@ -89,8 +95,37 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
     .where(and(eq(triageItems.userId, user.id), eq(triageItems.status, "pending")))
     .orderBy(desc(triageItems.createdAt));
 
+  const projectRows = await db
+    .select({ id: projects.id, name: projects.name, color: projects.color })
+    .from(projects)
+    .where(eq(projects.userId, user.id))
+    .orderBy(projects.createdAt);
+
   const active = rows.filter((t) => t.status !== "completed");
   const completed = rows.filter((t) => t.status === "completed");
+
+  // Unknown ids (deleted project, hand-edited URL) fall back to "all".
+  const selected =
+    projectParam === "unassigned" || projectRows.some((p) => p.id === projectParam) ? projectParam! : "all";
+  const visible = filterTasksByProject(active, selected);
+  const selectedProject = projectRows.find((p) => p.id === selected);
+  const stripProjects = projectRows.map((p) => ({ ...p, taskCount: active.filter((t) => t.projectId === p.id).length }));
+
+  let workspaceFiles: { id: string; fileName: string; href: string | null; isLink: boolean }[] = [];
+  if (selectedProject) {
+    const files = await db
+      .select({ id: projectFiles.id, fileName: projectFiles.fileName, fileUrl: projectFiles.fileUrl })
+      .from(projectFiles)
+      .where(eq(projectFiles.projectId, selectedProject.id))
+      .orderBy(projectFiles.createdAt);
+    const storagePaths = files.filter((f) => !isProjectLink(f.fileUrl)).map((f) => f.fileUrl);
+    const { data: signedFiles } = await supabase.storage.from("proof-uploads").createSignedUrls(storagePaths, 3600);
+    workspaceFiles = files.map((f) => {
+      const link = isProjectLink(f.fileUrl);
+      const href = link ? f.fileUrl : signedFiles?.find((s) => s.path === f.fileUrl)?.signedUrl ?? null;
+      return { id: f.id, fileName: f.fileName, href, isLink: link };
+    });
+  }
 
   return (
     <main className="mx-auto flex w-full max-w-xl flex-col gap-6 p-4">
@@ -134,18 +169,33 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
         <>
       <AddTaskForm />
 
-      <ul className="flex flex-col gap-3">
-        {active.map((task) => (
-          <TaskCard
-            key={task.id}
-            {...task}
-            activeTimerStartedAt={task.activeTimerStartedAt?.toISOString() ?? null}
-            thumbnails={thumbnailsByTask.get(task.id) ?? []}
-            subtasks={subtaskRows.filter((s) => s.taskId === task.id)}
-          />
-        ))}
-        {active.length === 0 && <p className="text-muted-foreground">Nothing to do. Add a task above.</p>}
-      </ul>
+      <ProjectDnd>
+        <ProjectStrip
+          selected={selected}
+          allCount={active.length}
+          unassignedCount={filterTasksByProject(active, "unassigned").length}
+          projects={stripProjects}
+        />
+
+        {selectedProject && (
+          <ProjectWorkspace projectId={selectedProject.id} name={selectedProject.name} files={workspaceFiles} />
+        )}
+
+        <ul className="flex flex-col gap-3">
+          {visible.map((task) => (
+            <DraggableTask key={task.id} id={task.id}>
+              <TaskCard
+                {...task}
+                activeTimerStartedAt={task.activeTimerStartedAt?.toISOString() ?? null}
+                thumbnails={thumbnailsByTask.get(task.id) ?? []}
+                subtasks={subtaskRows.filter((s) => s.taskId === task.id)}
+                projects={projectRows}
+              />
+            </DraggableTask>
+          ))}
+          {visible.length === 0 && <p className="text-muted-foreground">Nothing to do here. Add a task above.</p>}
+        </ul>
+      </ProjectDnd>
 
       <details>
         <summary className="cursor-pointer font-medium">Completed ({completed.length})</summary>

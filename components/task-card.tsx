@@ -6,6 +6,7 @@ import {
   addSubtask, addTaskProof, completeTask, deleteTask, runAiTaskPrep, startTaskTimer, stopTaskTimer, toggleSubtask,
   updateTaskEstimate,
 } from "@/app/actions/tasks";
+import { assignTaskToProject } from "@/app/actions/projects";
 import { Button } from "@/components/ui/button";
 import { calculateLoggedMinutes } from "@/lib/task-rules";
 
@@ -20,11 +21,13 @@ type Props = {
   thumbnails: { id: string; url: string }[];
   aiClarifyingQuestions: string[] | null;
   subtasks: { id: string; label: string; isCompleted: boolean; source: "user" | "ai_pitfall" }[];
+  projectId: string | null;
+  projects: { id: string; name: string }[];
 };
 
 export function TaskCard({
   id, title, completionType, estimatedMinutes, actualMinutes, activeTimerStartedAt, proofCount, thumbnails,
-  aiClarifyingQuestions, subtasks,
+  aiClarifyingQuestions, subtasks, projectId, projects,
 }: Props) {
   const [note, setNote] = useState("");
   const [subtaskLabel, setSubtaskLabel] = useState("");
@@ -36,7 +39,7 @@ export function TaskCard({
   const [trim, setTrim] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const hovered = useRef(false);
-  const card = useRef<HTMLLIElement>(null);
+  const card = useRef<HTMLDivElement>(null);
   const isProof = completionType === "proof";
 
   const startedAt = activeTimerStartedAt ? new Date(activeTimerStartedAt) : null;
@@ -104,7 +107,7 @@ export function TaskCard({
   }
 
   return (
-    <li
+    <div
       ref={card}
       className="flex flex-col gap-3 rounded-lg border p-3"
       onMouseEnter={() => (hovered.current = true)}
@@ -138,10 +141,22 @@ export function TaskCard({
             m
           </label>
         </div>
-        <Button variant="ghost" size="sm" disabled={pending} onClick={() => run(() => deleteTask(id))}>
+        {/* mr-8 leaves room for the desktop drag handle */}
+        <Button className="md:mr-8" variant="ghost" size="sm" disabled={pending} onClick={() => run(() => deleteTask(id))}>
           Delete
         </Button>
       </div>
+
+      <select
+        value={projectId ?? ""}
+        disabled={pending}
+        aria-label="Project folder"
+        onChange={(e) => run(() => assignTaskToProject(id, e.target.value || null))}
+        className="h-9 rounded-md border bg-background px-2 text-base"
+      >
+        <option value="">No project</option>
+        {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
 
       {!startedAt ? (
         <Button type="button" variant="outline" size="lg" disabled={pending} onClick={() => run(() => startTaskTimer(id))}>
@@ -286,6 +301,6 @@ export function TaskCard({
       >
         {isProof ? "Mark Complete" : "Done"}
       </Button>
-    </li>
+    </div>
   );
 }
