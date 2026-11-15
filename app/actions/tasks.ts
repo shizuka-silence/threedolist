@@ -3,8 +3,9 @@
 import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { taskProofs, tasks, timeLogs } from "@/db/schema";
-import { assertCanComplete, calculateLoggedMinutes } from "@/lib/task-rules";
+import { taskProofs, taskSubtasks, tasks, timeLogs } from "@/db/schema";
+import { generateTaskPrep } from "@/lib/ai";
+import { assertCanComplete, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate } from "@/lib/task-rules";
 import { createClient } from "@/lib/supabase/server";
 
 // Drizzle bypasses RLS, so every action below must call requireUser() and filter by user.id.
@@ -156,6 +157,85 @@ export async function deleteTask(taskId: string): Promise<Result> {
 
   await db.delete(tasks).where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id))); // proofs cascade
   if (images.length) await supabase.storage.from(PROOF_BUCKET).remove(images.map((i) => i.path));
+  revalidatePath("/");
+  return {};
+}
+
+export async function updateTaskEstimate(taskId: string, estimatedMinutes: number | null): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+  if (estimatedMinutes !== null && (!Number.isInteger(estimatedMinutes) || estimatedMinutes <= 0)) {
+    return { error: "Estimated minutes must be a whole number above 0." };
+  }
+
+  const updated = await db
+    .update(tasks)
+    .set({ estimatedMinutes })
+    .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)))
+    .returning({ id: tasks.id });
+  if (updated.length === 0) return { error: "Task not found." };
+  revalidatePath("/");
+  return {};
+}
+
+// Runs only when the user clicks AI Prep; never call this from task creation.
+export async function runAiTaskPrep(taskId: string): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+
+  const task = await findOwnedTask(user.id, taskId);
+  if (!task) return { error: "Task not found." };
+
+  let prep;
+  try {
+    prep = normalizeAiPrepOutput(await generateTaskPrep(task));
+  } catch (e) {
+    return { error: `AI Prep failed: ${(e as Error).message}` };
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(tasks)
+      .set({
+        estimatedMinutes: resolveAiEstimate(task.estimatedMinutes, prep.estimatedMinutes),
+        aiClarifyingQuestions: prep.clarifyingQuestions,
+      })
+      .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)));
+    // A second AI Prep click replaces unchecked pitfalls instead of duplicating them.
+    await tx.delete(taskSubtasks).where(and(eq(taskSubtasks.taskId, taskId), eq(taskSubtasks.source, "ai_pitfall"), eq(taskSubtasks.isCompleted, false)));
+    await tx
+      .insert(taskSubtasks)
+      .values(prep.pitfalls.map((label) => ({ taskId, label, source: "ai_pitfall" as const })));
+  });
+  revalidatePath("/");
+  return {};
+}
+
+export async function addSubtask(taskId: string, label: string): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+  const trimmed = label.trim();
+  if (!trimmed) return { error: "Type a subtask first." };
+  if (!(await findOwnedTask(user.id, taskId))) return { error: "Task not found." };
+
+  await db.insert(taskSubtasks).values({ taskId, label: trimmed, source: "user" });
+  revalidatePath("/");
+  return {};
+}
+
+export async function toggleSubtask(subtaskId: string): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+
+  // Ownership comes from the parent task, so confirm it before flipping the flag.
+  const [owned] = await db
+    .select({ id: taskSubtasks.id })
+    .from(taskSubtasks)
+    .innerJoin(tasks, eq(tasks.id, taskSubtasks.taskId))
+    .where(and(eq(taskSubtasks.id, subtaskId), eq(tasks.userId, user.id)));
+  if (!owned) return { error: "Subtask not found." };
+
+  await db.update(taskSubtasks).set({ isCompleted: sql`not ${taskSubtasks.isCompleted}` }).where(eq(taskSubtasks.id, subtaskId));
   revalidatePath("/");
   return {};
 }

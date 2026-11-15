@@ -2,7 +2,10 @@
 
 import imageCompression from "browser-image-compression";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { addTaskProof, completeTask, deleteTask, startTaskTimer, stopTaskTimer } from "@/app/actions/tasks";
+import {
+  addSubtask, addTaskProof, completeTask, deleteTask, runAiTaskPrep, startTaskTimer, stopTaskTimer, toggleSubtask,
+  updateTaskEstimate,
+} from "@/app/actions/tasks";
 import { Button } from "@/components/ui/button";
 import { calculateLoggedMinutes } from "@/lib/task-rules";
 
@@ -15,12 +18,16 @@ type Props = {
   activeTimerStartedAt: string | null; // ISO
   proofCount: number;
   thumbnails: { id: string; url: string }[];
+  aiClarifyingQuestions: string[] | null;
+  subtasks: { id: string; label: string; isCompleted: boolean; source: "user" | "ai_pitfall" }[];
 };
 
 export function TaskCard({
   id, title, completionType, estimatedMinutes, actualMinutes, activeTimerStartedAt, proofCount, thumbnails,
+  aiClarifyingQuestions, subtasks,
 }: Props) {
   const [note, setNote] = useState("");
+  const [subtaskLabel, setSubtaskLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [now, setNow] = useState<number | null>(null); // null until mounted, avoids a hydration mismatch
@@ -90,6 +97,11 @@ export function TaskCard({
     run(() => addTaskProof(formData), () => setNote(""));
   }
 
+  function addSubtaskSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    run(() => addSubtask(id, subtaskLabel), () => setSubtaskLabel(""));
+  }
+
   return (
     <li
       ref={card}
@@ -102,9 +114,28 @@ export function TaskCard({
           <p className="break-words font-medium">{title}</p>
           <p className="text-sm text-muted-foreground">
             {isProof ? "Proof" : "Tick"}
-            {` · Logged ${actualMinutes}m${estimatedMinutes ? ` / ${estimatedMinutes}m` : ""}`}
+            {` · Logged ${actualMinutes}m`}
             {isProof ? ` · ${proofCount} attached` : ""}
           </p>
+          <label className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
+            Est
+            <input
+              // key remounts the field when the server value changes (e.g. after AI Prep fills it)
+              key={estimatedMinutes ?? "none"}
+              type="number"
+              inputMode="numeric"
+              min={1}
+              defaultValue={estimatedMinutes ?? ""}
+              placeholder="min"
+              aria-label="Estimated minutes"
+              onBlur={(e) => {
+                const value = e.target.value === "" ? null : Number(e.target.value);
+                if (value !== estimatedMinutes) run(() => updateTaskEstimate(id, value));
+              }}
+              className="h-8 w-16 rounded-md border bg-background px-2 text-base"
+            />
+            m
+          </label>
         </div>
         <Button variant="ghost" size="sm" disabled={pending} onClick={() => run(() => deleteTask(id))}>
           Delete
@@ -193,6 +224,40 @@ export function TaskCard({
           </form>
         </div>
       )}
+
+      <div className="flex flex-col gap-2">
+        <Button type="button" variant="outline" disabled={pending} onClick={() => run(() => runAiTaskPrep(id))}>
+          {pending ? "Working…" : "AI Prep"}
+        </Button>
+        {aiClarifyingQuestions && aiClarifyingQuestions.length > 0 && (
+          <ul className="list-disc pl-5 text-sm">
+            {aiClarifyingQuestions.map((q) => <li key={q}>{q}</li>)}
+          </ul>
+        )}
+        {subtasks.length > 0 && (
+          <ul className="flex flex-col gap-1">
+            {subtasks.map((s) => (
+              <li key={s.id}>
+                <label className={`flex items-center gap-2 text-sm ${s.source === "ai_pitfall" ? "italic text-muted-foreground" : ""}`}>
+                  <input type="checkbox" checked={s.isCompleted} disabled={pending} onChange={() => run(() => toggleSubtask(s.id))} />
+                  {s.source === "ai_pitfall" && <span aria-label="AI pitfall">⚠</span>}
+                  {s.label}
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+        <form onSubmit={addSubtaskSubmit} className="flex gap-2">
+          <input
+            value={subtaskLabel}
+            onChange={(e) => setSubtaskLabel(e.target.value)}
+            placeholder="Add subtask"
+            aria-label="Add subtask"
+            className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-base"
+          />
+          <Button type="submit" variant="outline" disabled={pending}>Add</Button>
+        </form>
+      </div>
 
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 

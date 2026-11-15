@@ -10,7 +10,7 @@ import { TaskCard } from "@/components/task-card";
 import { TriageCard } from "@/components/triage-card";
 import { Button } from "@/components/ui/button";
 import { db } from "@/db";
-import { taskProofs, tasks, triageItems } from "@/db/schema";
+import { taskProofs, taskSubtasks, tasks, triageItems } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 
 export default function Home({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
@@ -40,6 +40,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
       actualMinutes: tasks.actualMinutes,
       activeTimerStartedAt: tasks.activeTimerStartedAt,
       status: tasks.status,
+      aiClarifyingQuestions: tasks.aiClarifyingQuestions,
       proofCount,
     })
     .from(tasks)
@@ -60,6 +61,18 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
     const url = signed?.[i]?.signedUrl;
     if (url) thumbnailsByTask.set(p.taskId, [...(thumbnailsByTask.get(p.taskId) ?? []), { id: p.id, url }]);
   });
+
+  const subtaskRows = await db
+    .select({
+      id: taskSubtasks.id,
+      taskId: taskSubtasks.taskId,
+      label: taskSubtasks.label,
+      isCompleted: taskSubtasks.isCompleted,
+      source: taskSubtasks.source,
+    })
+    .from(taskSubtasks)
+    .innerJoin(tasks, eq(tasks.id, taskSubtasks.taskId))
+    .where(eq(tasks.userId, user.id));
 
   const pendingTriage = await db
     .select({
@@ -113,6 +126,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
             {...task}
             activeTimerStartedAt={task.activeTimerStartedAt?.toISOString() ?? null}
             thumbnails={thumbnailsByTask.get(task.id) ?? []}
+            subtasks={subtaskRows.filter((s) => s.taskId === task.id)}
           />
         ))}
         {active.length === 0 && <p className="text-muted-foreground">Nothing to do. Add a task above.</p>}
