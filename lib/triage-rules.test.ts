@@ -1,0 +1,117 @@
+import { describe, expect, it } from "vitest";
+import {
+  MAX_EMAIL_BODY_CHARS,
+  buildPromotionTaskPayload,
+  formatEmailBatchForAi,
+  normalizeParsedTriageItems,
+} from "./triage-rules";
+
+describe("formatEmailBatchForAi", () => {
+  it("combines multiple emails into one block with subject, sender and body", () => {
+    const text = formatEmailBatchForAi([
+      { subject: "Rent due", sender: "landlord@x.com", body: "Pay by Friday" },
+      { subject: "Re: Rent due", sender: "landlord@x.com", body: "Correction: Monday" },
+    ]);
+    expect(text).toContain("Rent due");
+    expect(text).toContain("landlord@x.com");
+    expect(text).toContain("Pay by Friday");
+    expect(text).toContain("Correction: Monday");
+    expect(text.indexOf("Pay by Friday")).toBeLessThan(text.indexOf("Correction: Monday"));
+  });
+
+  it("numbers each email so the model can tell them apart", () => {
+    const text = formatEmailBatchForAi([{ subject: "A" }, { subject: "B" }]);
+    expect(text).toContain("Email 1");
+    expect(text).toContain("Email 2");
+  });
+
+  it("truncates huge bodies to the cap", () => {
+    const text = formatEmailBatchForAi([{ subject: "Big", body: "x".repeat(MAX_EMAIL_BODY_CHARS * 10) }]);
+    expect(text.length).toBeLessThan(MAX_EMAIL_BODY_CHARS + 500);
+    expect(text).toContain("x".repeat(MAX_EMAIL_BODY_CHARS));
+    expect(text).not.toContain("x".repeat(MAX_EMAIL_BODY_CHARS + 1));
+  });
+
+  it("tolerates missing fields", () => {
+    expect(() => formatEmailBatchForAi([{}])).not.toThrow();
+  });
+});
+
+describe("normalizeParsedTriageItems", () => {
+  it("keeps all four valid categories", () => {
+    const items = normalizeParsedTriageItems([
+      { category: "announcement", sourceSubject: "A", summary: "s", suggestedAction: "a" },
+      { category: "requirement", sourceSubject: "B", summary: "s", suggestedAction: "a" },
+      { category: "opportunity", sourceSubject: "C", summary: "s", suggestedAction: "a" },
+      { category: "reply", sourceSubject: "D", summary: "s", suggestedAction: "a" },
+    ]);
+    expect(items.map((i) => i.category)).toEqual(["announcement", "requirement", "opportunity", "reply"]);
+  });
+
+  it("falls back to requirement for an unknown category", () => {
+    const [item] = normalizeParsedTriageItems([{ category: "spam", sourceSubject: "X" }]);
+    expect(item.category).toBe("requirement");
+  });
+
+  it("filters out items with empty or whitespace subjects", () => {
+    const items = normalizeParsedTriageItems([
+      { category: "reply", sourceSubject: "" },
+      { category: "reply", sourceSubject: "   " },
+      { category: "reply" },
+      { category: "reply", sourceSubject: "Keep" },
+    ]);
+    expect(items).toHaveLength(1);
+    expect(items[0].sourceSubject).toBe("Keep");
+  });
+
+  it("trims text and turns blank summary/action into null", () => {
+    const [item] = normalizeParsedTriageItems([
+      { category: "reply", sourceSubject: "  Hi  ", summary: "  ", suggestedAction: " Reply yes " },
+    ]);
+    expect(item).toEqual({ category: "reply", sourceSubject: "Hi", summary: null, suggestedAction: "Reply yes" });
+  });
+
+  it("returns [] for non-array input", () => {
+    expect(normalizeParsedTriageItems(null)).toEqual([]);
+    expect(normalizeParsedTriageItems({})).toEqual([]);
+  });
+});
+
+describe("buildPromotionTaskPayload", () => {
+  const base = { sourceSubject: "Quarterly report", summary: "Numbers needed", suggestedAction: "Reply Yes/No to Sam" };
+
+  it("requirement -> proof task titled with the subject", () => {
+    const p = buildPromotionTaskPayload({ ...base, category: "requirement" });
+    expect(p.title).toBe("Quarterly report");
+    expect(p.completionType).toBe("proof");
+    expect(p.notes).toContain("Numbers needed");
+  });
+
+  it("opportunity -> proof task prefixed with Register / RSVP:", () => {
+    const p = buildPromotionTaskPayload({ ...base, category: "opportunity" });
+    expect(p.title).toBe("Register / RSVP: Quarterly report");
+    expect(p.completionType).toBe("proof");
+  });
+
+  it("reply -> tick task titled with the suggested action", () => {
+    const p = buildPromotionTaskPayload({ ...base, category: "reply" });
+    expect(p.title).toBe("Reply Yes/No to Sam");
+    expect(p.completionType).toBe("tick");
+  });
+
+  it("reply without a suggested action falls back to Reply: subject", () => {
+    const p = buildPromotionTaskPayload({ category: "reply", sourceSubject: "Lunch?", suggestedAction: null });
+    expect(p.title).toBe("Reply: Lunch?");
+  });
+
+  it("announcement -> tick task titled with the subject", () => {
+    const p = buildPromotionTaskPayload({ ...base, category: "announcement" });
+    expect(p.title).toBe("Quarterly report");
+    expect(p.completionType).toBe("tick");
+  });
+
+  it("notes is a string even when summary and action are missing", () => {
+    const p = buildPromotionTaskPayload({ category: "requirement", sourceSubject: "S" });
+    expect(typeof p.notes).toBe("string");
+  });
+});

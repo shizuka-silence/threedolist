@@ -68,6 +68,7 @@ export const triageItems = pgTable("triage_items", {
   sourceSubject: text("source_subject").notNull(),
   summary: text("summary"),
   suggestedAction: text("suggested_action"),
+  category: text("category", { enum: ["announcement", "requirement", "opportunity", "reply"] }).notNull().default("requirement"),
   status: text("status", { enum: ["pending", "promoted", "dismissed"] }).notNull().default("pending"),
   createdAt: createdAt(),
 });
