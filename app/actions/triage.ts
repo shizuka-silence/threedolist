@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { tasks, triageItems } from "@/db/schema";
 import { parseEmailBatchToTriageItems } from "@/lib/ai";
 import { createClient } from "@/lib/supabase/server";
-import { buildPromotionTaskPayload, formatEmailBatchForAi, normalizeParsedTriageItems, type NormalizedTriageItem } from "@/lib/triage-rules";
+import { buildPromotionTaskPayload, formatEmailBatchForAi, normalizeParsedTriageItems, parseTriageCategory, type NormalizedTriageItem } from "@/lib/triage-rules";
 
 // Drizzle bypasses RLS, so every action below must check getUser() and filter by user.id.
 
@@ -116,6 +116,28 @@ export async function triggerGmailSync(): Promise<Result> {
   } catch {
     return { error: "Could not reach the Gmail sync URL." };
   }
+  revalidatePath("/");
+  return {};
+}
+
+export async function updateTriageItemCategory(triageItemId: string, category: string): Promise<Result> {
+  const user = await requireUser();
+  if (!user) return { error: "Not signed in." };
+
+  let parsed;
+  try {
+    parsed = parseTriageCategory(category);
+  } catch {
+    return { error: "Invalid category." };
+  }
+
+  const updated = await db
+    .update(triageItems)
+    .set({ category: parsed })
+    .where(and(eq(triageItems.id, triageItemId), eq(triageItems.userId, user.id), eq(triageItems.status, "pending")))
+    .returning({ id: triageItems.id });
+  if (updated.length === 0) return { error: "Triage item not found." };
+
   revalidatePath("/");
   return {};
 }

@@ -14,20 +14,13 @@ import { ProjectStrip } from "@/components/project-strip";
 import { ProjectWorkspace } from "@/components/project-workspace";
 import { TaskCard } from "@/components/task-card";
 import { EmailDumpBox } from "@/components/email-dump-box";
-import { TriageCard } from "@/components/triage-card";
+import { TriageList } from "@/components/triage-list";
 import { Button } from "@/components/ui/button";
 import { db } from "@/db";
 import { projectFiles, projects, taskProofs, taskSubtasks, tasks, triageItems } from "@/db/schema";
 import { loadReceipts } from "@/app/receipts";
 import { filterTasksByProject, isProjectLink } from "@/lib/project-rules";
 import { createClient } from "@/lib/supabase/server";
-
-const TRIAGE_SECTIONS = [
-  { category: "requirement", heading: "Requirements & Deadlines" },
-  { category: "reply", heading: "Replies Needed" },
-  { category: "opportunity", heading: "Opportunities" },
-  { category: "announcement", heading: "Announcements" },
-] as const;
 
 export default function Home({ searchParams }: { searchParams: Promise<{ tab?: string; project?: string }> }) {
   return (
@@ -178,18 +171,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
           <EmailDumpBox canSyncGmail={Boolean(process.env.GMAIL_SYNC_WEBHOOK_URL)} />
           <BrainDumpBar />
           {pendingTriage.length === 0 && <p className="text-muted-foreground">Triage is empty. Dump a thought above.</p>}
-          {TRIAGE_SECTIONS.map(({ category, heading }) => {
-            const items = pendingTriage.filter((item) => item.category === category);
-            if (items.length === 0) return null;
-            return (
-              <section key={category} className="flex flex-col gap-2">
-                <h2 className="font-semibold">{heading} ({items.length})</h2>
-                <ul className="flex flex-col gap-3">
-                  {items.map((item) => <TriageCard key={item.id} {...item} />)}
-                </ul>
-              </section>
-            );
-          })}
+          <TriageList items={pendingTriage} />
         </>
       ) : (
         <>

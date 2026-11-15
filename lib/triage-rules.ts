@@ -12,9 +12,10 @@ export type NormalizedTriageItem = {
 
 export const MAX_EMAIL_BODY_CHARS = 1500;
 
-// Red phase: stub accepts everything. Implementation comes after the tests are committed.
 export function parseTriageCategory(value: unknown): TriageCategory {
-  return value as TriageCategory;
+  const category = TRIAGE_CATEGORIES.find((c) => c === value);
+  if (!category) throw new Error(`Invalid triage category: ${String(value)}`);
+  return category;
 }
 
 export function formatEmailBatchForAi(emails: EmailInput[]): string {
