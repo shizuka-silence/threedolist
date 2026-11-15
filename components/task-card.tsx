@@ -13,6 +13,7 @@ import { calculateLoggedMinutes } from "@/lib/task-rules";
 type Props = {
   id: string;
   title: string;
+  status: "todo" | "scheduled" | "completed";
   completionType: "tick" | "proof";
   estimatedMinutes: number | null;
   actualMinutes: number;
@@ -26,7 +27,7 @@ type Props = {
 };
 
 export function TaskCard({
-  id, title, completionType, estimatedMinutes, actualMinutes, activeTimerStartedAt, proofCount, thumbnails,
+  id, title, status, completionType, estimatedMinutes, actualMinutes, activeTimerStartedAt, proofCount, thumbnails,
   aiClarifyingQuestions, subtasks, projectId, projects,
 }: Props) {
   const [note, setNote] = useState("");
@@ -142,9 +143,11 @@ export function TaskCard({
           </label>
         </div>
         {/* mr-8 leaves room for the desktop drag handle */}
-        <Button className="md:mr-8" variant="ghost" size="sm" disabled={pending} onClick={() => run(() => deleteTask(id))}>
-          Delete
-        </Button>
+        {status !== "completed" && (
+          <Button className="md:mr-8" variant="ghost" size="sm" disabled={pending} onClick={() => run(() => deleteTask(id))}>
+            Delete
+          </Button>
+        )}
       </div>
 
       <select

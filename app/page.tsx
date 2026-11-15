@@ -8,6 +8,7 @@ import { AddTaskForm } from "@/components/add-task-form";
 import { BrainDumpBar } from "@/components/brain-dump-bar";
 import { DayCalendar } from "@/components/day-calendar";
 import { DraggableTask } from "@/components/draggable-task";
+import { ReceiptLog } from "@/components/receipt-log";
 import { ProjectDnd } from "@/components/project-dnd";
 import { ProjectStrip } from "@/components/project-strip";
 import { ProjectWorkspace } from "@/components/project-workspace";
@@ -16,6 +17,7 @@ import { TriageCard } from "@/components/triage-card";
 import { Button } from "@/components/ui/button";
 import { db } from "@/db";
 import { projectFiles, projects, taskProofs, taskSubtasks, tasks, triageItems } from "@/db/schema";
+import { loadReceipts } from "@/app/receipts";
 import { filterTasksByProject, isProjectLink } from "@/lib/project-rules";
 import { createClient } from "@/lib/supabase/server";
 
@@ -31,6 +33,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
   const { tab, project: projectParam } = await searchParams;
   const showTriage = tab === "triage";
   const showCalendar = tab === "calendar";
+  const showReceipts = tab === "receipts";
   await connection(); // per-user page: render at request time (auth/session code reads Date.now())
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -101,8 +104,9 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
     .where(eq(projects.userId, user.id))
     .orderBy(projects.createdAt);
 
+  const receipts = showReceipts ? await loadReceipts(supabase, user.id) : [];
+
   const active = rows.filter((t) => t.status !== "completed");
-  const completed = rows.filter((t) => t.status === "completed");
 
   // Unknown ids (deleted project, hand-edited URL) fall back to "all".
   const selected =
@@ -140,8 +144,9 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
       </header>
 
       <nav className="flex gap-2">
-        <Link href="/" className={tabClass(!showTriage && !showCalendar)}>Tasks</Link>
+        <Link href="/" className={tabClass(!showTriage && !showCalendar && !showReceipts)}>Tasks</Link>
         <Link href="/?tab=calendar" className={tabClass(showCalendar)}>Calendar</Link>
+        <Link href="/?tab=receipts" className={tabClass(showReceipts)}>Receipts</Link>
         <Link href="/?tab=triage" className={tabClass(showTriage)}>
           Triage{pendingTriage.length > 0 && ` (${pendingTriage.length})`}
         </Link>
@@ -157,6 +162,8 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
             scheduledStart: t.scheduledStart?.toISOString() ?? null,
           }))}
         />
+      ) : showReceipts ? (
+        <ReceiptLog receipts={receipts} projects={projectRows} />
       ) : showTriage ? (
         <>
           <BrainDumpBar />
@@ -197,17 +204,6 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
         </ul>
       </ProjectDnd>
 
-      <details>
-        <summary className="cursor-pointer font-medium">Completed ({completed.length})</summary>
-        <ul className="mt-2 flex flex-col gap-2">
-          {completed.map((task) => (
-            <li key={task.id} className="rounded-lg border p-3 text-sm text-muted-foreground">
-              {task.title}
-              {task.estimatedMinutes ? ` · Est ${task.estimatedMinutes}m` : ""}
-            </li>
-          ))}
-        </ul>
-      </details>
         </>
       )}
     </main>

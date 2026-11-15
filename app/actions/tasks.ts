@@ -8,6 +8,7 @@ import { generateTaskPrep } from "@/lib/ai";
 import {
   assertCanComplete, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate, type AiPrepParts,
 } from "@/lib/task-rules";
+import { assertCanDeleteTask } from "@/lib/receipt-rules";
 import { createClient } from "@/lib/supabase/server";
 
 // Drizzle bypasses RLS, so every action below must call requireUser() and filter by user.id.
@@ -180,7 +181,13 @@ export async function unscheduleTask(taskId: string): Promise<Result> {
 export async function deleteTask(taskId: string): Promise<Result> {
   const { supabase, user } = await requireUser();
   if (!user) return { error: "Not signed in." };
-  if (!(await findOwnedTask(user.id, taskId))) return { error: "Task not found." };
+  const task = await findOwnedTask(user.id, taskId);
+  if (!task) return { error: "Task not found." };
+  try {
+    assertCanDeleteTask(task.status);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
 
   const images = await db
     .select({ path: taskProofs.storagePathOrUrl })
