@@ -1,4 +1,4 @@
-# Project: ProofDo — Anti-Forgetfulness & Time-Reality Task App
+# Project: ThreeDoList — Anti-Forgetfulness & Time-Reality Task App
 
 Write and structure everything as the long-term solo maintainer who has to debug this codebase six months from now: keep modules small, cohesive, and boringly readable—no premature abstractions, wrapper bloat, or sprawling helper files.
 
