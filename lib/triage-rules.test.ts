@@ -4,6 +4,8 @@ import {
   buildPromotionTaskPayload,
   formatEmailBatchForAi,
   normalizeParsedTriageItems,
+  parseTriageCategory,
+  TRIAGE_CATEGORIES,
 } from "./triage-rules";
 
 describe("formatEmailBatchForAi", () => {
@@ -113,5 +115,19 @@ describe("buildPromotionTaskPayload", () => {
   it("notes is a string even when summary and action are missing", () => {
     const p = buildPromotionTaskPayload({ category: "requirement", sourceSubject: "S" });
     expect(typeof p.notes).toBe("string");
+  });
+});
+
+describe("parseTriageCategory", () => {
+  it("lists the four categories", () => {
+    expect([...TRIAGE_CATEGORIES]).toEqual(["announcement", "requirement", "opportunity", "reply"]);
+  });
+
+  it.each(["announcement", "requirement", "opportunity", "reply"])("accepts %s", (category) => {
+    expect(parseTriageCategory(category)).toBe(category);
+  });
+
+  it.each(["spam", "", "Reply", undefined, null, 3])("throws on %s", (value) => {
+    expect(() => parseTriageCategory(value)).toThrow();
   });
 });

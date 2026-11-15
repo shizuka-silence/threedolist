@@ -3,13 +3,35 @@
 import { useState, useTransition } from "react";
 import { dismissTriageItem, promoteTriageItem } from "@/app/actions/triage";
 import { Button } from "@/components/ui/button";
+import { buildPromotionTaskPayload, type TriageCategory } from "@/lib/triage-rules";
 
-type Props = { id: string; sourceSubject: string; summary: string | null; suggestedAction: string | null };
+type Props = {
+  id: string;
+  category: TriageCategory;
+  sourceSubject: string;
+  summary: string | null;
+  suggestedAction: string | null;
+};
 
-export function TriageCard({ id, sourceSubject, summary, suggestedAction }: Props) {
-  const [promoting, setPromoting] = useState(false);
-  const [title, setTitle] = useState(sourceSubject);
-  const [completionType, setCompletionType] = useState<"tick" | "proof">("tick");
+// Label of the 1-tap promote button per category; announcements can only be acknowledged.
+const PROMOTE_LABEL: Record<TriageCategory, string | null> = {
+  announcement: null,
+  requirement: "Promote to Proof Task",
+  opportunity: "Yes (Spawn RSVP Task)",
+  reply: "Spawn Reply Task",
+};
+const DISMISS_LABEL: Record<TriageCategory, string> = {
+  announcement: "✓ Acknowledge",
+  requirement: "Discard",
+  opportunity: "No",
+  reply: "Discard",
+};
+
+export function TriageCard({ id, category, sourceSubject, summary, suggestedAction }: Props) {
+  const defaults = buildPromotionTaskPayload({ category, sourceSubject, summary, suggestedAction });
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(defaults.title);
+  const [completionType, setCompletionType] = useState(defaults.completionType);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -20,13 +42,15 @@ export function TriageCard({ id, sourceSubject, summary, suggestedAction }: Prop
     });
   }
 
+  const promoteLabel = PROMOTE_LABEL[category];
+
   return (
     <li className="flex flex-col gap-2 rounded-lg border p-3">
       <p className="font-medium">{sourceSubject}</p>
       {summary && <p className="text-sm text-muted-foreground">{summary}</p>}
       {suggestedAction && <p className="text-sm">Suggested: {suggestedAction}</p>}
 
-      {promoting ? (
+      {editing ? (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -52,10 +76,19 @@ export function TriageCard({ id, sourceSubject, summary, suggestedAction }: Prop
         </form>
       ) : (
         <div className="flex gap-2">
-          <Button onClick={() => setPromoting(true)} disabled={pending} className="h-10 flex-1">Promote to Task</Button>
+          {promoteLabel && (
+            <Button onClick={() => run(() => promoteTriageItem(id))} disabled={pending} className="h-10 flex-1">
+              {promoteLabel}
+            </Button>
+          )}
           <Button variant="outline" onClick={() => run(() => dismissTriageItem(id))} disabled={pending} className="h-10 flex-1">
-            Discard
+            {DISMISS_LABEL[category]}
           </Button>
+          {promoteLabel && (
+            <Button variant="outline" onClick={() => setEditing(true)} disabled={pending} className="h-10">
+              Edit
+            </Button>
+          )}
         </div>
       )}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
