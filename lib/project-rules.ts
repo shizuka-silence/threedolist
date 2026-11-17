@@ -31,3 +31,13 @@ export function filterTasksByProject<T extends { projectId: string | null }>(
   if (selectedProjectId === "unassigned") return tasks.filter((t) => t.projectId === null);
   return tasks.filter((t) => t.projectId === selectedProjectId);
 }
+
+/** Move `fromId` to where `toId` is (array-move). Unknown ids or a drop on itself return the order unchanged. */
+export function moveProject(ids: string[], fromId: string, toId: string): string[] {
+  const from = ids.indexOf(fromId);
+  const to = ids.indexOf(toId);
+  if (from === -1 || to === -1 || from === to) return ids;
+  const next = ids.filter((id) => id !== fromId);
+  next.splice(to, 0, fromId);
+  return next;
+}

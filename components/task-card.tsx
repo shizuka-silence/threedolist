@@ -4,7 +4,7 @@ import imageCompression from "browser-image-compression";
 import { useEffect, useRef, useState } from "react";
 import {
   addSubtask, addTaskProof, completeTask, deleteTask, runAiTaskPrep, startTaskTimer, stopTaskTimer, toggleSubtask,
-  updateTaskEstimate, updateTaskSchedule,
+  logTaskMinutes, updateTaskEstimate, updateTaskSchedule,
 } from "@/app/actions/tasks";
 import { assignTaskToProject } from "@/app/actions/projects";
 import { useDashboard } from "@/components/dashboard-provider";
@@ -38,6 +38,9 @@ export function TaskCard({
   aiClarifyingQuestions, subtasks, projectId, projects, deadline, repeatEvery, repeatWeekdays, repeatUnit, repeatUntil, hideProject, active, onActivate,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const [repeatMode, setRepeatMode] = useState<"weekdays" | "every">(repeatWeekdays?.length ? "weekdays" : "every");
+  const [added, setAdded] = useState(0); // extra minutes added when stopping the timer
+  const [logMinutes, setLogMinutes] = useState("");
   const [note, setNote] = useState("");
   const [subtaskLabel, setSubtaskLabel] = useState("");
   const [aiParts, setAiParts] = useState({ estimate: false, questions: false, pitfalls: false });
@@ -61,7 +64,7 @@ export function TaskCard({
     .join(":");
   const trimmed = Math.min(trim, elapsedMinutes);
   const netMinutes =
-    startedAt && now ? calculateLoggedMinutes({ startedAt, endedAt: new Date(now), trimmedIdleMinutes: trimmed }) : 0;
+    startedAt && now ? calculateLoggedMinutes({ startedAt, endedAt: new Date(now), trimmedIdleMinutes: trimmed, addedMinutes: added }) : 0;
 
   useEffect(() => {
     if (!activeTimerStartedAt) return;
@@ -116,6 +119,18 @@ export function TaskCard({
     });
   }
 
+  function logTime(event: React.FormEvent) {
+    event.preventDefault();
+    const minutes = Number(logMinutes);
+    if (!Number.isInteger(minutes) || minutes < 1) return;
+    setLogMinutes("");
+    run({ type: "task/addMinutes", id, minutes }, async () => {
+      const result = await logTaskMinutes(id, minutes);
+      if (result.error) setLogMinutes((current) => current || String(minutes));
+      return result;
+    });
+  }
+
   function addSubtaskSubmit(event: React.FormEvent) {
     event.preventDefault();
     const label = subtaskLabel.trim();
@@ -162,16 +177,7 @@ export function TaskCard({
       onMouseLeave={() => (hovered.current = false)}
     >
       <div className="flex items-center gap-2">
-        {/* Proof tasks can't be ticked without proof, so the tick opens the card to show where to add it. */}
-        <button
-          type="button"
-          aria-label={isProof && proofCount === 0 ? "Open to add proof" : "Mark complete"}
-          onClick={() => (isProof && proofCount === 0 ? setExpanded(true) : completeNow())}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-base hover:bg-primary hover:text-primary-foreground"
-        >
-          ✓
-        </button>
-        <button type="button" onClick={() => setExpanded(!expanded)} aria-expanded={expanded} className="min-w-0 flex-1 text-left">
+        <div className="min-w-0 flex-1">
           <p className="break-words font-medium">{title}</p>
           <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
             {project && !hideProject && (
@@ -186,9 +192,10 @@ export function TaskCard({
             ) : repeatEvery ? (
               <span>↻ {repeatEvery} {repeatUnit}</span>
             ) : null}
+            {actualMinutes > 0 && <span>Logged {actualMinutes}m</span>}
             {isProof && <span>{proofCount} attached</span>}
           </p>
-        </button>
+        </div>
         <label className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground">
           <input
             // key remounts the field when the server value changes (e.g. after AI Prep fills it)
@@ -208,9 +215,25 @@ export function TaskCard({
           />
           m
         </label>
-        {/* mr-8 leaves room for the desktop drag handle */}
-        <button type="button" aria-label={expanded ? "Collapse" : "Expand"} onClick={() => setExpanded(!expanded)} className="px-1 md:mr-8">
-          {expanded ? "▴" : "▾"}
+        {/* Proof tasks need at least one proof first, so the tick stays greyed out until then. */}
+        <button
+          type="button"
+          aria-label="Mark complete"
+          title={isProof && proofCount === 0 ? "Add proof first" : "Mark complete"}
+          disabled={isProof && proofCount === 0}
+          onClick={completeNow}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-base enabled:hover:bg-primary enabled:hover:text-primary-foreground disabled:opacity-30"
+        >
+          ✓
+        </button>
+        <button
+          type="button"
+          aria-label={expanded ? "Collapse" : "Expand"}
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border text-lg leading-none"
+        >
+          {expanded ? "−" : "+"}
         </button>
       </div>
 
@@ -239,64 +262,89 @@ export function TaskCard({
                 className={fieldClass}
               />
             </label>
-            <div className="flex flex-wrap items-center gap-1 text-sm">
-              On
-              {DAY_NAMES.map((name, n) => {
-                const on = repeatWeekdays?.includes(n) ?? false;
-                return (
-                  <button
-                    key={name}
-                    type="button"
-                    aria-pressed={on}
-                    aria-label={name}
-                    onClick={() => {
-                      const next = on ? (repeatWeekdays ?? []).filter((d) => d !== n) : [...(repeatWeekdays ?? []), n].sort();
-                      scheduleChange({ repeatWeekdays: next.length ? next : null, repeatEvery: null });
-                    }}
-                    className={`h-8 w-8 rounded-full border text-xs ${on ? "bg-primary text-primary-foreground" : ""}`}
-                  >
-                    {name[0]}
-                  </button>
-                );
-              })}
-            </div>
+            {/* Only one repeat rule is shown (and active) at a time. */}
             <div className="flex flex-wrap items-center gap-2 text-sm">
-              {repeatWeekdays?.length ? "Or every" : "Or repeat every"}
-              <input
-                key={repeatEvery ?? "none"}
-                type="number"
-                min={1}
-                defaultValue={repeatEvery ?? ""}
-                placeholder="–"
-                aria-label="Repeat interval"
-                onBlur={(e) => {
-                  const every = e.target.value === "" ? null : Number(e.target.value);
-                  if (every !== repeatEvery) scheduleChange({ repeatEvery: every, repeatUnit: repeatUnit ?? "week", repeatWeekdays: null });
-                }}
-                className="h-9 w-16 rounded-md border bg-background px-2 text-base"
-              />
-              <select
-                value={repeatUnit ?? "week"}
-                aria-label="Repeat unit"
-                onChange={(e) => scheduleChange({ repeatUnit: e.target.value as "day" | "week" | "month" })}
-                className={fieldClass}
-              >
-                <option value="day">days</option>
-                <option value="week">weeks</option>
-                <option value="month">months</option>
-              </select>
-              {(repeatEvery || repeatWeekdays?.length) && (
-                <label className="flex items-center gap-2">
-                  until
-                  <input
-                    type="date"
-                    value={repeatUntil?.slice(0, 10) ?? ""}
-                    onChange={(e) => scheduleChange({ repeatUntil: toIso(e.target.value) })}
-                    className={fieldClass}
-                  />
-                </label>
-              )}
+              Repeat
+              <div role="group" aria-label="Repeat type" className="flex overflow-hidden rounded-md border">
+                {([["weekdays", "Days of week"], ["every", "Every N"]] as const).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    aria-pressed={repeatMode === mode}
+                    onClick={() => {
+                      if (repeatMode === mode) return;
+                      setRepeatMode(mode);
+                      // Drop the rule that is no longer shown so only the visible one can repeat the task.
+                      if (mode === "weekdays" && repeatEvery) scheduleChange({ repeatEvery: null });
+                      if (mode === "every" && repeatWeekdays?.length) scheduleChange({ repeatWeekdays: null });
+                    }}
+                    className={`h-8 px-3 ${repeatMode === mode ? "bg-primary text-primary-foreground" : ""}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
+            {repeatMode === "weekdays" ? (
+              <div className="flex flex-wrap items-center gap-1 text-sm">
+                {DAY_NAMES.map((name, n) => {
+                  const on = repeatWeekdays?.includes(n) ?? false;
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      aria-pressed={on}
+                      aria-label={name}
+                      onClick={() => {
+                        const next = on ? (repeatWeekdays ?? []).filter((d) => d !== n) : [...(repeatWeekdays ?? []), n].sort();
+                        scheduleChange({ repeatWeekdays: next.length ? next : null, repeatEvery: null });
+                      }}
+                      className={`h-8 w-8 rounded-full border text-xs ${on ? "bg-primary text-primary-foreground" : ""}`}
+                    >
+                      {name[0]}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                Every
+                <input
+                  key={repeatEvery ?? "none"}
+                  type="number"
+                  min={1}
+                  defaultValue={repeatEvery ?? ""}
+                  placeholder="–"
+                  aria-label="Repeat interval"
+                  onBlur={(e) => {
+                    const every = e.target.value === "" ? null : Number(e.target.value);
+                    if (every !== repeatEvery) scheduleChange({ repeatEvery: every, repeatUnit: repeatUnit ?? "week", repeatWeekdays: null });
+                  }}
+                  className="h-9 w-16 rounded-md border bg-background px-2 text-base"
+                />
+                <select
+                  value={repeatUnit ?? "week"}
+                  aria-label="Repeat unit"
+                  onChange={(e) => scheduleChange({ repeatUnit: e.target.value as "day" | "week" | "month" })}
+                  className={fieldClass}
+                >
+                  <option value="day">days</option>
+                  <option value="week">weeks</option>
+                  <option value="month">months</option>
+                </select>
+              </div>
+            )}
+            {(repeatEvery || repeatWeekdays?.length) && (
+              <label className="flex items-center gap-2 text-sm">
+                Repeat until
+                <input
+                  type="date"
+                  value={repeatUntil?.slice(0, 10) ?? ""}
+                  onChange={(e) => scheduleChange({ repeatUntil: toIso(e.target.value) })}
+                  className={fieldClass}
+                />
+              </label>
+            )}
           </div>
 
           {/* 2. Subtasks and notes */}
@@ -368,7 +416,7 @@ export function TaskCard({
           </div>
 
           {/* 4. Timer */}
-          <div className="border-t pt-3">
+          <div className="flex flex-col gap-2 border-t pt-3">
             {!startedAt ? (
               <Button
                 type="button"
@@ -382,14 +430,14 @@ export function TaskCard({
             ) : !stopping ? (
               <div className="flex items-center justify-between gap-2">
                 <span className="font-mono text-lg" aria-live="off">{clock}</span>
-                <Button type="button" variant="outline" size="lg" onClick={() => { setTrim(0); setStopping(true); }}>
+                <Button type="button" variant="outline" size="lg" onClick={() => { setTrim(0); setAdded(0); setStopping(true); }}>
                   Stop
                 </Button>
               </div>
             ) : (
               <div className="flex flex-col gap-2 rounded-md border p-2">
                 <p className="text-sm">
-                  Elapsed {clock} · trim idle: <strong>{trimmed}m</strong> · will log <strong>{netMinutes}m</strong>
+                  Elapsed {clock} · trim idle: <strong>{trimmed}m</strong> · added: <strong>{added}m</strong> · will log <strong>{netMinutes}m</strong>
                 </p>
                 <input
                   type="range"
@@ -401,17 +449,24 @@ export function TaskCard({
                 />
                 <div className="flex flex-wrap gap-2">
                   {[5, 15].map((m) => (
-                    <Button key={m} type="button" variant="outline" size="sm" onClick={() => setTrim(Math.min(elapsedMinutes, trimmed + m))}>
+                    <Button key={`-${m}`} type="button" variant="outline" size="sm" onClick={() => setTrim(Math.min(elapsedMinutes, trimmed + m))}>
                       -{m}m
                     </Button>
                   ))}
+                  {[5, 15].map((m) => (
+                    <Button key={`+${m}`} type="button" variant="outline" size="sm" onClick={() => setAdded(added + m)}>
+                      +{m}m
+                    </Button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
                   <Button type="button" variant="ghost" size="sm" onClick={() => setStopping(false)}>Keep running</Button>
                   <Button
                     type="button"
                     size="sm"
                     onClick={() => {
                       setStopping(false);
-                      run({ type: "task/stopTimer", id, minutes: netMinutes }, () => stopTaskTimer(id, trimmed));
+                      run({ type: "task/stopTimer", id, minutes: netMinutes }, () => stopTaskTimer(id, trimmed, added));
                     }}
                   >
                     Confirm stop
@@ -419,6 +474,21 @@ export function TaskCard({
                 </div>
               </div>
             )}
+            {/* For work done without the timer (offline, away from the phone). */}
+            <form onSubmit={logTime} className="flex items-center gap-2 text-sm">
+              Or log time taken
+              <input
+                value={logMinutes}
+                onChange={(e) => setLogMinutes(e.target.value)}
+                type="number"
+                inputMode="numeric"
+                min={1}
+                placeholder="min"
+                aria-label="Minutes taken"
+                className="h-9 w-20 rounded-md border bg-background px-2 text-base"
+              />
+              <Button type="submit" variant="outline" size="sm">Log</Button>
+            </form>
           </div>
 
           {/* 5. Photo proof */}

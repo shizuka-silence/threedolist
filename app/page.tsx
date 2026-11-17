@@ -89,7 +89,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
       .select({ id: projects.id, name: projects.name, color: projects.color })
       .from(projects)
       .where(eq(projects.userId, user.id))
-      .orderBy(projects.createdAt),
+      .orderBy(projects.position, projects.createdAt),
     db
       .select({ id: projectFiles.id, projectId: projectFiles.projectId, fileName: projectFiles.fileName, fileUrl: projectFiles.fileUrl })
       .from(projectFiles)

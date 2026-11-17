@@ -7,7 +7,7 @@ import { generateTaskPrep } from "@/lib/ai";
 import { isUuid, toClientTask } from "@/lib/dashboard-rows";
 import type { OptimisticSubtask, OptimisticTask, TaskSchedule } from "@/lib/optimistic-rules";
 import {
-  assertCanComplete, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate, type AiPrepParts,
+  assertCanComplete, assertValidLoggedMinutes, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate, type AiPrepParts,
 } from "@/lib/task-rules";
 import { assertCanDeleteTask } from "@/lib/receipt-rules";
 import { nextDeadline, nextWeekdayDeadline } from "@/lib/recurrence";
@@ -168,12 +168,13 @@ export async function startTaskTimer(taskId: string): Promise<Result> {
   return {};
 }
 
-export async function stopTaskTimer(taskId: string, trimmedIdleMinutes: number): Promise<Result> {
+export async function stopTaskTimer(taskId: string, trimmedIdleMinutes: number, addedMinutes = 0): Promise<Result> {
   const { user } = await requireUser();
   if (!user) return { error: "Not signed in." };
   if (!Number.isFinite(trimmedIdleMinutes) || trimmedIdleMinutes < 0 || !Number.isInteger(trimmedIdleMinutes)) {
     return { error: "Idle minutes must be a whole number, 0 or more." };
   }
+  if (!Number.isInteger(addedMinutes) || addedMinutes < 0) return { error: "Added minutes must be a whole number, 0 or more." };
 
   const task = await findOwnedTask(user.id, taskId);
   if (!task) return { error: "Task not found." };
@@ -181,13 +182,36 @@ export async function stopTaskTimer(taskId: string, trimmedIdleMinutes: number):
   if (!startedAt) return { error: "Timer is not running." };
 
   const endedAt = new Date();
-  const durationMinutes = calculateLoggedMinutes({ startedAt, endedAt, trimmedIdleMinutes });
+  const durationMinutes = calculateLoggedMinutes({ startedAt, endedAt, trimmedIdleMinutes, addedMinutes });
 
   await db.transaction(async (tx) => {
     await tx.insert(timeLogs).values({ taskId, startedAt, endedAt, durationMinutes });
     await tx
       .update(tasks)
       .set({ actualMinutes: sql`${tasks.actualMinutes} + ${durationMinutes}`, activeTimerStartedAt: null })
+      .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)));
+  });
+  return {};
+}
+
+// For work done without the timer (offline, away from the phone): "it took me 40 minutes".
+export async function logTaskMinutes(taskId: string, minutes: number): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+  try {
+    assertValidLoggedMinutes(minutes);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+  if (!(await findOwnedTask(user.id, taskId))) return { error: "Task not found." };
+
+  const endedAt = new Date();
+  const startedAt = new Date(endedAt.getTime() - minutes * 60_000);
+  await db.transaction(async (tx) => {
+    await tx.insert(timeLogs).values({ taskId, startedAt, endedAt, durationMinutes: minutes });
+    await tx
+      .update(tasks)
+      .set({ actualMinutes: sql`${tasks.actualMinutes} + ${minutes}` })
       .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)));
   });
   return {};

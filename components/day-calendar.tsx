@@ -1,10 +1,11 @@
 "use client";
 
-import { DndContext, MouseSensor, pointerWithin, TouchSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { DndContext, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { GripVertical, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { scheduleTask, unscheduleTask } from "@/app/actions/tasks";
 import { useDashboard } from "@/components/dashboard-provider";
+import { SmartMouseSensor, SmartTouchSensor } from "@/components/dnd-sensors";
 import { Button } from "@/components/ui/button";
 import { buildSlotTimestamp, computeBlockHeightPx, formatVarianceBadge } from "@/lib/calendar-rules";
 
@@ -36,8 +37,8 @@ export function DayCalendar() {
 
   // Small mouse threshold so button clicks still work; touch needs a long-press so swipes still scroll.
   const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
+    useSensor(SmartMouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(SmartTouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
   );
 
   useEffect(() => setDay(toDayStr(new Date())), []);

@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, max } from "drizzle-orm";
 import { db } from "@/db";
 import { projectFiles, projects, tasks } from "@/db/schema";
 import { isUuid, toClientProjectFile } from "@/lib/dashboard-rows";
@@ -31,9 +31,11 @@ export async function createProject(name: string, color?: string, id?: string): 
   if (!user) return { error: "Not signed in." };
   if (id && !isUuid(id)) return { error: "Invalid id." };
   try {
+    const input = validateProjectInput(name, color);
+    const [last] = await db.select({ top: max(projects.position) }).from(projects).where(eq(projects.userId, user.id));
     const [project] = await db
       .insert(projects)
-      .values({ id, userId: user.id, ...validateProjectInput(name, color) })
+      .values({ id, userId: user.id, ...input, position: (last?.top ?? -1) + 1 })
       .returning({ id: projects.id, name: projects.name, color: projects.color });
     return { project };
   } catch (e) {
@@ -55,6 +57,22 @@ export async function deleteProject(projectId: string): Promise<Result> {
   // Tasks are also unset by the FK (on delete set null); done explicitly so it doesn't depend on that.
   await db.update(tasks).set({ projectId: null }).where(and(eq(tasks.projectId, projectId), eq(tasks.userId, user.id)));
   await db.delete(projects).where(and(eq(projects.id, projectId), eq(projects.userId, user.id))); // files cascade
+  return {};
+}
+
+// ids = the user's full folder order, left to right.
+export async function reorderProjects(ids: string[]): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+  const owned = await db.select({ id: projects.id }).from(projects).where(eq(projects.userId, user.id));
+  if (ids.length !== owned.length || new Set(ids).size !== ids.length || !ids.every((id) => owned.some((p) => p.id === id))) {
+    return { error: "Project list is out of date. Reload and try again." };
+  }
+  await db.transaction(async (tx) => {
+    for (const [position, id] of ids.entries()) {
+      await tx.update(projects).set({ position }).where(and(eq(projects.id, id), eq(projects.userId, user.id)));
+    }
+  });
   return {};
 }
 

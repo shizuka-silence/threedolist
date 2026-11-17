@@ -1,6 +1,6 @@
 "use client";
 
-import { useDroppable } from "@dnd-kit/core";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useState } from "react";
 import { createProject } from "@/app/actions/projects";
 import { useDashboard } from "@/components/dashboard-provider";
@@ -15,12 +15,19 @@ type Props = {
   projects: { id: string; name: string; color: string; taskCount: number }[];
 };
 
-function Folder({ dropId, onSelect, selected, label, count, color }: {
-  dropId?: string; onSelect: () => void; selected: boolean; label: string; count: number; color?: string;
+function Folder({ dropId, dragId, onSelect, selected, label, count, color }: {
+  dropId?: string; dragId?: string; // dragId set = this folder can be dragged to reorder the strip
+  onSelect: () => void; selected: boolean; label: string; count: number; color?: string;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: dropId ?? "none", disabled: !dropId });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: dropId ?? "none", disabled: !dropId });
+  const drag = useDraggable({ id: dragId ?? "none", disabled: !dragId });
   return (
-    <div ref={setNodeRef} className={`shrink-0 rounded-md ${isOver ? "ring-2 ring-primary" : ""}`}>
+    <div
+      ref={(node) => { setDropRef(node); drag.setNodeRef(node); }}
+      {...drag.listeners}
+      style={{ transform: drag.transform ? `translate(${drag.transform.x}px, ${drag.transform.y}px)` : undefined, zIndex: drag.isDragging ? 20 : undefined }}
+      className={`shrink-0 rounded-md [-webkit-touch-callout:none] ${isOver ? "ring-2 ring-primary" : ""} ${drag.isDragging ? "opacity-80 shadow-lg" : ""}`}
+    >
       <button
         type="button"
         onClick={onSelect}
@@ -66,7 +73,7 @@ export function ProjectStrip({ selected, onSelect, allCount, unassignedCount, pr
         />
         {projects.map((p) => (
           <Folder
-            key={p.id} dropId={`project:${p.id}`} onSelect={() => onSelect(p.id)} selected={selected === p.id}
+            key={p.id} dropId={`project:${p.id}`} dragId={`folder:${p.id}`} onSelect={() => onSelect(p.id)} selected={selected === p.id}
             label={p.name} count={p.taskCount} color={p.color}
           />
         ))}

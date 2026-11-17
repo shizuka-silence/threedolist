@@ -5,14 +5,22 @@ export function assertCanComplete(task: { completionType: "proof" | "tick" }, pr
   }
 }
 
-/** Whole minutes worked, after trimming idle time. Never negative. */
+/** Whole minutes worked, after trimming idle time and adding any extra. Never negative. */
 export function calculateLoggedMinutes(input: {
   startedAt: Date;
   endedAt: Date;
   trimmedIdleMinutes: number;
+  addedMinutes?: number;
 }): number {
   const elapsedMinutes = (input.endedAt.getTime() - input.startedAt.getTime()) / 60_000;
-  return Math.max(0, Math.round(elapsedMinutes - input.trimmedIdleMinutes));
+  return Math.max(0, Math.round(elapsedMinutes - input.trimmedIdleMinutes + (input.addedMinutes ?? 0)));
+}
+
+/** Manually typed time (work done away from the timer): whole minutes, 1 to 24 hours. */
+export function assertValidLoggedMinutes(minutes: number): void {
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
+    throw new Error("Minutes must be a whole number from 1 to 1440.");
+  }
 }
 
 /** AI only fills an empty estimate; any user-entered value (even 0) is kept. */

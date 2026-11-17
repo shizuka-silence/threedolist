@@ -44,6 +44,17 @@ export function AddTaskForm({ projectId }: { projectId: string | null }) {
           aria-label="Task title"
           className="h-12 min-w-0 flex-1 rounded-md border bg-background px-3 text-base"
         />
+        {/* One toggle: Proof (default) <-> Tick. */}
+        <Button
+          type="button"
+          variant={completionType === "tick" ? "default" : "outline"}
+          aria-pressed={completionType === "tick"}
+          aria-label={`Completion type: ${completionType}. Click to switch.`}
+          onClick={() => setCompletionType(completionType === "proof" ? "tick" : "proof")}
+          className="h-12 w-20 shrink-0"
+        >
+          {completionType === "proof" ? "Proof" : "Tick"}
+        </Button>
         <input
           value={minutes}
           onChange={(e) => setMinutes(e.target.value)}
@@ -54,26 +65,6 @@ export function AddTaskForm({ projectId }: { projectId: string | null }) {
           aria-label="Estimated minutes"
           className="h-12 w-20 rounded-md border bg-background px-3 text-base"
         />
-      </div>
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          variant={completionType === "tick" ? "default" : "outline"}
-          aria-pressed={completionType === "tick"}
-          onClick={() => setCompletionType("tick")}
-          className="h-8 px-3 text-sm"
-        >
-          Tick
-        </Button>
-        <Button
-          type="button"
-          variant={completionType === "proof" ? "default" : "outline"}
-          aria-pressed={completionType === "proof"}
-          onClick={() => setCompletionType("proof")}
-          className="h-8 px-3 text-sm"
-        >
-          Proof
-        </Button>
       </div>
       <Button type="submit" size="lg" className="h-12 w-full">
         Add

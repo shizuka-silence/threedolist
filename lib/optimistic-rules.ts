@@ -66,12 +66,14 @@ export type OptimisticChange =
   | { type: "task/upsert"; task: OptimisticTask; replaces?: string }
   | { type: "triage/upsert"; item: OptimisticTriageItem; replaces?: string }
   | { type: "project/upsert"; project: OptimisticProject }
+  | { type: "project/reorder"; ids: string[] }
   | { type: "file/upsert"; file: OptimisticProjectFile }
   | { type: "task/remove"; id: string }
   | { type: "project/remove"; id: string }
   | { type: "file/remove"; id: string }
   | { type: "task/startTimer"; id: string; at: string }
   | { type: "task/stopTimer"; id: string; minutes: number }
+  | { type: "task/addMinutes"; id: string; minutes: number }
   | { type: "task/addProof"; id: string; thumbnail?: { id: string; url: string } }
   | { type: "task/setPrep"; id: string; estimatedMinutes: number | null; questions: string[] | null; pitfalls: OptimisticSubtask[] };
 
@@ -136,7 +138,16 @@ export function applyOptimisticChange(state: OptimisticState, change: Optimistic
     case "triage/upsert":
       return { ...state, triage: upsertFirst(state.triage, change.item, change.replaces) };
     case "project/upsert":
-      return { ...state, projects: [...state.projects.filter((p) => p.id !== change.project.id), change.project] };
+      // Replace in place so a rename or recolor keeps the folder's slot; only new projects go last.
+      return state.projects.some((p) => p.id === change.project.id)
+        ? { ...state, projects: state.projects.map((p) => (p.id === change.project.id ? change.project : p)) }
+        : { ...state, projects: [...state.projects, change.project] };
+    case "project/reorder": {
+      const rank = (id: string) => { const i = change.ids.indexOf(id); return i === -1 ? change.ids.length : i; };
+      return { ...state, projects: [...state.projects].sort((a, b) => rank(a.id) - rank(b.id)) }; // stable sort keeps unknown ids in order
+    }
+    case "task/addMinutes":
+      return editTask(change.id, (t) => ({ ...t, actualMinutes: t.actualMinutes + change.minutes }));
     case "file/upsert":
       return { ...state, projectFiles: [...state.projectFiles.filter((f) => f.id !== change.file.id), change.file] };
     case "task/remove":

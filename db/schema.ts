@@ -8,6 +8,7 @@ export const projects = pgTable("projects", {
   userId: uuid("user_id").notNull(), // Supabase auth.users.id
   name: text("name").notNull(),
   color: text("color").notNull(),
+  position: integer("position").notNull().default(0), // folder order in the strip; ties fall back to createdAt
   createdAt: createdAt(),
 });
 
