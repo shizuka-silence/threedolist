@@ -81,6 +81,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
         sourceSubject: triageItems.sourceSubject,
         summary: triageItems.summary,
         suggestedAction: triageItems.suggestedAction,
+        sourceUrl: triageItems.sourceUrl,
         category: triageItems.category,
       })
       .from(triageItems)

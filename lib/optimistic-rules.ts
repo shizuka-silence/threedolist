@@ -8,6 +8,7 @@ export type OptimisticTriageItem = {
   sourceSubject: string;
   summary: string | null;
   suggestedAction: string | null;
+  sourceUrl?: string | null;
 };
 
 export type OptimisticSubtask = { id: string; label: string; isCompleted: boolean; source: "user" | "ai_pitfall" };

@@ -34,6 +34,7 @@ export async function parseEmailBatchToTriageItems(batchText: string) {
     items: z.array(
       z.object({
         category: z.enum(["announcement", "requirement", "opportunity", "reply"]),
+        emailNumber: z.number().describe("The N from the '--- Email N ---' header this item came from; for merged items, the latest email"),
         sourceSubject: z.string().describe("Short title for this item"),
         summary: z.string().describe("One or two sentences, including any deadline"),
         suggestedAction: z.string().describe("Concrete next step, e.g. 'Reply Yes/No to Sam'"),

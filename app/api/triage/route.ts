@@ -18,7 +18,12 @@ export async function POST(request: Request) {
   const payload = await request.json().catch(() => null);
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
   const emails: EmailInput[] = Array.isArray(payload?.emails)
-    ? payload.emails.map((e: Record<string, unknown>) => ({ subject: str(e?.subject), sender: str(e?.sender), body: str(e?.body) }))
+    ? payload.emails.map((e: Record<string, unknown>) => ({
+        subject: str(e?.subject),
+        sender: str(e?.sender) ?? str(e?.from), // the Gmail script sends from/snippet
+        body: str(e?.body) ?? str(e?.snippet),
+        url: str(e?.url),
+      }))
     : [{ subject: str(payload?.subject), sender: str(payload?.sender), body: str(payload?.body) ?? str(payload?.rawText) }];
   if (!emails.some((e) => e.subject?.trim() || e.body?.trim())) {
     return NextResponse.json({ error: "No email content" }, { status: 400 });
@@ -27,7 +32,7 @@ export async function POST(request: Request) {
   let items: NormalizedTriageItem[];
   try {
     const parsed = await parseEmailBatchToTriageItems(formatEmailBatchForAi(emails));
-    items = normalizeParsedTriageItems(parsed.items);
+    items = normalizeParsedTriageItems(parsed.items, emails);
   } catch (error) {
     console.error("Triage AI failed, filing raw emails", error);
     items = [];
@@ -35,7 +40,8 @@ export async function POST(request: Request) {
   // Fallback so an AI failure (or an empty result) never silently drops mail.
   if (items.length === 0) {
     items = normalizeParsedTriageItems(
-      emails.map((e) => ({ category: "requirement", sourceSubject: e.subject || e.body?.slice(0, 80), summary: e.body?.slice(0, 300) })),
+      emails.map((e, i) => ({ category: "requirement", sourceSubject: e.subject || e.body?.slice(0, 80), summary: e.body?.slice(0, 300), emailNumber: i + 1 })),
+      emails,
     );
   }
   if (items.length === 0) return NextResponse.json({ error: "No email content" }, { status: 400 });

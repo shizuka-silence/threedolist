@@ -1,13 +1,14 @@
 export const TRIAGE_CATEGORIES = ["announcement", "requirement", "opportunity", "reply"] as const;
 export type TriageCategory = (typeof TRIAGE_CATEGORIES)[number];
 
-export type EmailInput = { subject?: string; sender?: string; body?: string };
+export type EmailInput = { subject?: string; sender?: string; body?: string; url?: string };
 
 export type NormalizedTriageItem = {
   category: TriageCategory;
   sourceSubject: string;
   summary: string | null;
   suggestedAction: string | null;
+  sourceUrl?: string;
 };
 
 export const MAX_EMAIL_BODY_CHARS = 1500;
@@ -28,7 +29,8 @@ Subject: ${e.subject ?? "(none)"}\n\n${body}`;
     .join("\n\n");
 }
 
-export function normalizeParsedTriageItems(rawItems: unknown): NormalizedTriageItem[] {
+// `emails` lets us turn the AI's 1-based `emailNumber` into that email's real url (the AI never writes urls itself).
+export function normalizeParsedTriageItems(rawItems: unknown, emails: EmailInput[] = []): NormalizedTriageItem[] {
   if (!Array.isArray(rawItems)) return [];
   const text = (v: unknown) => (typeof v === "string" ? v.trim() || null : null);
   const items: NormalizedTriageItem[] = [];
@@ -36,7 +38,9 @@ export function normalizeParsedTriageItems(rawItems: unknown): NormalizedTriageI
     const sourceSubject = text(raw?.sourceSubject);
     if (!sourceSubject) continue;
     const category = TRIAGE_CATEGORIES.includes(raw.category) ? raw.category : "requirement";
-    items.push({ category, sourceSubject, summary: text(raw.summary), suggestedAction: text(raw.suggestedAction) });
+    const url = Number.isInteger(raw.emailNumber) ? emails[raw.emailNumber - 1]?.url : undefined;
+    const sourceUrl = url && /^https?:\/\//i.test(url) ? url : undefined;
+    items.push({ category, sourceSubject, summary: text(raw.summary), suggestedAction: text(raw.suggestedAction), sourceUrl });
   }
   return items;
 }

@@ -20,6 +20,7 @@ const triageClientColumns = {
   sourceSubject: triageItems.sourceSubject,
   summary: triageItems.summary,
   suggestedAction: triageItems.suggestedAction,
+  sourceUrl: triageItems.sourceUrl,
 };
 
 async function requireUser() {

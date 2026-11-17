@@ -13,6 +13,7 @@ type Props = {
   sourceSubject: string;
   summary: string | null;
   suggestedAction: string | null;
+  sourceUrl?: string | null;
   onReclassify: (id: string, category: TriageCategory) => void;
 };
 
@@ -45,7 +46,7 @@ const CATEGORY_BADGE: Record<TriageCategory, string> = {
   announcement: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
 };
 
-export function TriageCard({ id, category, sourceSubject, summary, suggestedAction, onReclassify }: Props) {
+export function TriageCard({ id, category, sourceSubject, summary, suggestedAction, sourceUrl, onReclassify }: Props) {
   const defaults = buildPromotionTaskPayload({ category, sourceSubject, summary, suggestedAction });
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(defaults.title);
@@ -70,6 +71,11 @@ export function TriageCard({ id, category, sourceSubject, summary, suggestedActi
       <p className="font-medium">{sourceSubject}</p>
       {summary && <p className="truncate font-mono text-xs text-zinc-400">{summary}</p>}
       {suggestedAction && <p className="text-sm">Suggested: {suggestedAction}</p>}
+      {sourceUrl && (
+        <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-sky-400 underline underline-offset-2">
+          Open email ↗
+        </a>
+      )}
 
       <div role="group" aria-label="Category" className="flex flex-wrap gap-1">
         {TRIAGE_CATEGORIES.map((c) => (
