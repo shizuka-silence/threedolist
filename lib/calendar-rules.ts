@@ -18,3 +18,51 @@ export function buildSlotTimestamp(dayDateStr: string, hour: number, minute: num
   }
   return date;
 }
+
+// Days are local "YYYY-MM-DD" strings, matching buildSlotTimestamp.
+export function toDayStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+const parseDay = (day: string) => {
+  const [y, m, d] = day.split("-").map(Number);
+  return { y, m: m - 1, d };
+};
+
+/** The Sunday-to-Saturday week containing `day`. */
+export function weekDays(day: string): string[] {
+  const { y, m, d } = parseDay(day);
+  const sunday = d - new Date(y, m, d).getDay();
+  return Array.from({ length: 7 }, (_, i) => toDayStr(new Date(y, m, sunday + i)));
+}
+
+/** Whole Sunday-to-Saturday weeks covering the month of `day`, including neighbouring-month days. */
+export function monthGrid(day: string): string[] {
+  const { y, m } = parseDay(day);
+  const first = new Date(y, m, 1);
+  const last = new Date(y, m + 1, 0);
+  const start = 1 - first.getDay();
+  const end = last.getDate() + (6 - last.getDay());
+  return Array.from({ length: end - start + 1 }, (_, i) => toDayStr(new Date(y, m, start + i)));
+}
+
+/** Month moves keep the day-of-month, clamped to the target month's length (Jan 31 + 1 month = Feb 28). */
+export function shiftDate(day: string, unit: "day" | "week" | "month", delta: number): string {
+  const { y, m, d } = parseDay(day);
+  if (unit === "month") {
+    const lastDay = new Date(y, m + delta + 1, 0).getDate();
+    return toDayStr(new Date(y, m + delta, Math.min(d, lastDay)));
+  }
+  return toDayStr(new Date(y, m, d + (unit === "week" ? 7 : 1) * delta));
+}
+
+/** Scheduled tasks grouped by local day, each day sorted by start time. Unscheduled tasks are skipped. */
+export function groupTasksByDay<T extends { scheduledStart: string | null }>(tasks: T[]): Map<string, T[]> {
+  const byDay = new Map<string, T[]>();
+  const scheduled = tasks.filter((t) => t.scheduledStart).sort((a, b) => +new Date(a.scheduledStart!) - +new Date(b.scheduledStart!));
+  for (const t of scheduled) {
+    const key = toDayStr(new Date(t.scheduledStart!));
+    byDay.set(key, [...(byDay.get(key) ?? []), t]);
+  }
+  return byDay;
+}

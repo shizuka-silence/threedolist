@@ -2,12 +2,12 @@
 
 import { DndContext, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { GripVertical, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { scheduleTask, unscheduleTask } from "@/app/actions/tasks";
 import { useDashboard } from "@/components/dashboard-provider";
 import { SmartMouseSensor, SmartTouchSensor } from "@/components/dnd-sensors";
 import { Button } from "@/components/ui/button";
-import { buildSlotTimestamp, computeBlockHeightPx, formatVarianceBadge } from "@/lib/calendar-rules";
+import { buildSlotTimestamp, computeBlockHeightPx, formatVarianceBadge, toDayStr } from "@/lib/calendar-rules";
 
 type CalendarTask = {
   id: string;
@@ -26,13 +26,12 @@ const SLOTS = Array.from({ length: (LAST_HOUR - FIRST_HOUR) * 2 }, (_, i) => ({
 }));
 
 const slotId = (hour: number, minute: number) => `${hour}:${minute}`;
-const toDayStr = (d: Date) => d.toLocaleDateString("en-CA"); // YYYY-MM-DD in local time
 const timeLabel = (h: number, m: number) => new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
-export function DayCalendar() {
+// Scheduling lives only here; the week and month views are read-only. `day` comes from CalendarTab.
+export function DayCalendar({ day }: { day: string }) {
   const { state, run } = useDashboard();
   const tasks: CalendarTask[] = state.tasks;
-  const [day, setDay] = useState<string | null>(null); // set after mount so server and browser agree
   const [picking, setPicking] = useState<CalendarTask | null>(null);
 
   // Small mouse threshold so button clicks still work; touch needs a long-press so swipes still scroll.
@@ -41,11 +40,8 @@ export function DayCalendar() {
     useSensor(SmartTouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
   );
 
-  useEffect(() => setDay(toDayStr(new Date())), []);
-  if (!day) return <p className="text-muted-foreground">Loading…</p>;
-
   function schedule(taskId: string, hour: number, minute: number) {
-    const start = buildSlotTimestamp(day!, hour, minute);
+    const start = buildSlotTimestamp(day, hour, minute);
     run({ type: "task/schedule", id: taskId, start: start.toISOString() }, () => scheduleTask(taskId, start));
   }
 
@@ -53,11 +49,6 @@ export function DayCalendar() {
     if (!over) return;
     const [hour, minute] = String(over.id).split(":").map(Number);
     schedule(String(active.id), hour, minute);
-  }
-
-  function shiftDay(delta: number) {
-    const [y, m, d] = day!.split("-").map(Number);
-    setDay(toDayStr(new Date(y, m - 1, d + delta)));
   }
 
   const startOf = (t: CalendarTask) => new Date(t.scheduledStart!);
@@ -69,12 +60,6 @@ export function DayCalendar() {
   return (
     <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={onDragEnd}>
       <section className="flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-2">
-          <Button variant="outline" onClick={() => shiftDay(-1)} aria-label="Previous day" className="h-10">‹</Button>
-          <p className="font-medium">{new Date(`${day}T12:00`).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}</p>
-          <Button variant="outline" onClick={() => shiftDay(1)} aria-label="Next day" className="h-10">›</Button>
-        </div>
-
         <div>
           <h2 className="mb-2 font-medium">To schedule</h2>
           <ul className="flex flex-col gap-2">

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Receipt } from "@/app/receipts";
 import { BrainDumpBar } from "@/components/brain-dump-bar";
-import { DayCalendar } from "@/components/day-calendar";
+import { CalendarTab } from "@/components/calendar-tab";
 import { EmailDumpBox } from "@/components/email-dump-box";
 import { ReceiptLog } from "@/components/receipt-log";
 import { TaskBoard } from "@/components/task-board";
@@ -72,7 +72,7 @@ export function DashboardShell({ initialTab, initialProject, receipts, canSyncGm
       </nav>
 
       {tab === "calendar" ? (
-        <DayCalendar />
+        <CalendarTab />
       ) : tab === "receipts" ? (
         <ReceiptLog receipts={receipts} />
       ) : tab === "triage" ? (
