@@ -9,6 +9,7 @@ import type { OptimisticSubtask, OptimisticTask, TaskSchedule } from "@/lib/opti
 import {
   assertCanComplete, assertValidLoggedMinutes, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate, type AiPrepParts,
 } from "@/lib/task-rules";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { assertCanDeleteTask } from "@/lib/receipt-rules";
 import { nextDeadline, nextWeekdayDeadline } from "@/lib/recurrence";
 import { createClient } from "@/lib/supabase/server";
@@ -18,6 +19,7 @@ import { createClient } from "@/lib/supabase/server";
 type Result = { error?: string };
 
 const PROOF_BUCKET = "proof-uploads";
+const AI_PREP_COOLDOWN_MS = 15_000;
 
 async function requireUser() {
   const supabase = await createClient();
@@ -320,6 +322,10 @@ export async function runAiTaskPrep(taskId: string, parts: AiPrepParts): Promise
 
   const task = await findOwnedTask(user.id, taskId);
   if (!task) return { error: "Task not found." };
+
+  // Cooldown: each run is a paid API call.
+  const limit = checkRateLimit(`ai-prep:${user.id}`, { max: 1, windowMs: AI_PREP_COOLDOWN_MS });
+  if (!limit.ok) return { error: `AI Prep is cooling down. Try again in ${limit.retryAfterSeconds}s.` };
 
   let prep;
   try {
