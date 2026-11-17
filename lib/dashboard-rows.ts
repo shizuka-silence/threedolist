@@ -15,6 +15,10 @@ type TaskRow = {
   status: "todo" | "scheduled" | "completed";
   scheduledStart: Date | null;
   aiClarifyingQuestions: string[] | null;
+  deadline: Date | null;
+  repeatEvery: number | null;
+  repeatUnit: "day" | "week" | "month" | null;
+  repeatUntil: Date | null;
 };
 
 export function toClientTask(
@@ -32,6 +36,10 @@ export function toClientTask(
     status: row.status,
     scheduledStart: row.scheduledStart?.toISOString() ?? null,
     aiClarifyingQuestions: row.aiClarifyingQuestions,
+    deadline: row.deadline?.toISOString() ?? null,
+    repeatEvery: row.repeatEvery,
+    repeatUnit: row.repeatUnit,
+    repeatUntil: row.repeatUntil?.toISOString() ?? null,
     proofCount: extra.proofCount ?? 0,
     thumbnails: extra.thumbnails ?? [],
     subtasks: extra.subtasks ?? [],

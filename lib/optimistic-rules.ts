@@ -23,10 +23,16 @@ export type OptimisticTask = {
   status: "todo" | "scheduled" | "completed";
   scheduledStart: string | null; // ISO
   aiClarifyingQuestions: string[] | null;
+  deadline: string | null; // ISO
+  repeatEvery: number | null;
+  repeatUnit: "day" | "week" | "month" | null;
+  repeatUntil: string | null; // ISO
   proofCount: number;
   thumbnails: { id: string; url: string }[];
   subtasks: OptimisticSubtask[];
 };
+
+export type TaskSchedule = Pick<OptimisticTask, "deadline" | "repeatEvery" | "repeatUnit" | "repeatUntil">;
 
 export type OptimisticProject = { id: string; name: string; color: string };
 export type OptimisticProjectFile = { id: string; projectId: string; fileName: string; href: string | null; isLink: boolean };
@@ -52,6 +58,7 @@ export type OptimisticChange =
   | { type: "task/complete"; id: string; at?: string }
   | { type: "task/assign"; id: string; projectId: string | null }
   | { type: "task/setEstimate"; id: string; minutes: number | null }
+  | { type: "task/setSchedule"; id: string; schedule: TaskSchedule }
   | { type: "task/schedule"; id: string; start: string }
   | { type: "task/unschedule"; id: string }
   // Rows the server returned. `replaces` swaps a temp-id placeholder for the real row.
@@ -77,7 +84,8 @@ function upsertFirst<T extends { id: string }>(list: T[], row: T, replaces?: str
 export function buildOptimisticTask(id: string, title: string, completionType: "tick" | "proof"): OptimisticTask {
   return {
     id, title, completionType, projectId: null, estimatedMinutes: null, actualMinutes: 0, activeTimerStartedAt: null,
-    status: "todo", scheduledStart: null, aiClarifyingQuestions: null, proofCount: 0, thumbnails: [], subtasks: [],
+    status: "todo", scheduledStart: null, aiClarifyingQuestions: null, deadline: null, repeatEvery: null, repeatUnit: null,
+    repeatUntil: null, proofCount: 0, thumbnails: [], subtasks: [],
   };
 }
 
@@ -116,6 +124,8 @@ export function applyOptimisticChange(state: OptimisticState, change: Optimistic
       return editTask(change.id, (t) => ({ ...t, projectId: change.projectId }));
     case "task/setEstimate":
       return editTask(change.id, (t) => ({ ...t, estimatedMinutes: change.minutes }));
+    case "task/setSchedule":
+      return editTask(change.id, (t) => ({ ...t, ...change.schedule }));
     case "task/schedule":
       return editTask(change.id, (t) => ({ ...t, scheduledStart: change.start, status: "scheduled" }));
     case "task/unschedule":

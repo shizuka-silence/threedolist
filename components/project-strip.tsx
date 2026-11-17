@@ -57,7 +57,7 @@ export function ProjectStrip({ selected, onSelect, allCount, unassignedCount, pr
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         <Folder onSelect={() => onSelect("all")} selected={selected === "all"} label="All" count={allCount} />
         <Folder
@@ -70,17 +70,18 @@ export function ProjectStrip({ selected, onSelect, allCount, unassignedCount, pr
             label={p.name} count={p.taskCount} color={p.color}
           />
         ))}
+        {/* Trailing chip so "new project" sits right next to the folders it adds to. */}
+        <form onSubmit={add} className="flex shrink-0 gap-1">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="+ New project"
+            aria-label="New project name"
+            className="h-10 w-36 rounded-md border border-dashed bg-background px-3 text-sm"
+          />
+          {name.trim() && <Button type="submit" variant="outline" className="h-10">Add</Button>}
+        </form>
       </div>
-      <form onSubmit={add} className="flex gap-2">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="+ New Project"
-          aria-label="New project name"
-          className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-base"
-        />
-        <Button type="submit" variant="outline">Create</Button>
-      </form>
     </div>
   );
 }

@@ -5,11 +5,12 @@ import { db } from "@/db";
 import { taskProofs, taskSubtasks, tasks, timeLogs } from "@/db/schema";
 import { generateTaskPrep } from "@/lib/ai";
 import { isUuid, toClientTask } from "@/lib/dashboard-rows";
-import type { OptimisticSubtask, OptimisticTask } from "@/lib/optimistic-rules";
+import type { OptimisticSubtask, OptimisticTask, TaskSchedule } from "@/lib/optimistic-rules";
 import {
   assertCanComplete, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate, type AiPrepParts,
 } from "@/lib/task-rules";
 import { assertCanDeleteTask } from "@/lib/receipt-rules";
+import { nextDeadline } from "@/lib/recurrence";
 import { createClient } from "@/lib/supabase/server";
 
 // Drizzle bypasses RLS, so every action below must call requireUser() and filter by user.id.
@@ -99,7 +100,8 @@ export async function addTaskProof(formData: FormData): Promise<Result & { thumb
   return {};
 }
 
-export async function completeTask(taskId: string): Promise<Result> {
+// Returns the next copy when the task repeats, so the client can show it without a reload.
+export async function completeTask(taskId: string): Promise<Result & { nextTask?: OptimisticTask }> {
   const { user } = await requireUser();
   if (!user) return { error: "Not signed in." };
 
@@ -117,7 +119,26 @@ export async function completeTask(taskId: string): Promise<Result> {
     .update(tasks)
     .set({ status: "completed", completedAt: new Date() })
     .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)));
-  return {};
+
+  if (!task.repeatEvery || !task.repeatUnit) return {};
+  const next = nextDeadline(task.deadline ?? new Date(), task.repeatEvery, task.repeatUnit, task.repeatUntil);
+  if (!next) return {};
+  const [row] = await db
+    .insert(tasks)
+    .values({
+      userId: user.id,
+      projectId: task.projectId,
+      title: task.title,
+      notes: task.notes,
+      completionType: task.completionType,
+      estimatedMinutes: task.estimatedMinutes,
+      deadline: next,
+      repeatEvery: task.repeatEvery,
+      repeatUnit: task.repeatUnit,
+      repeatUntil: task.repeatUntil,
+    })
+    .returning();
+  return { nextTask: toClientTask(row) };
 }
 
 export async function startTaskTimer(taskId: string): Promise<Result> {
@@ -216,6 +237,31 @@ export async function updateTaskEstimate(taskId: string, estimatedMinutes: numbe
   const updated = await db
     .update(tasks)
     .set({ estimatedMinutes })
+    .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)))
+    .returning({ id: tasks.id });
+  if (updated.length === 0) return { error: "Task not found." };
+  return {};
+}
+
+export async function updateTaskSchedule(taskId: string, s: TaskSchedule): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+  const date = (v: string | null) => (v ? new Date(v) : null);
+  const [deadline, repeatUntil] = [date(s.deadline), date(s.repeatUntil)];
+  if ([deadline, repeatUntil].some((d) => d && Number.isNaN(d.getTime()))) return { error: "Invalid date." };
+  if (s.repeatEvery !== null && (!Number.isInteger(s.repeatEvery) || s.repeatEvery < 1 || !s.repeatUnit)) {
+    return { error: "Repeat needs a whole number above 0 and a unit." };
+  }
+  const repeating = s.repeatEvery !== null;
+
+  const updated = await db
+    .update(tasks)
+    .set({
+      deadline,
+      repeatEvery: s.repeatEvery,
+      repeatUnit: repeating ? s.repeatUnit : null,
+      repeatUntil: repeating ? repeatUntil : null,
+    })
     .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)))
     .returning({ id: tasks.id });
   if (updated.length === 0) return { error: "Task not found." };

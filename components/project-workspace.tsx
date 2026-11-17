@@ -1,13 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { addProjectLink, deleteProject, deleteProjectFile, uploadProjectFile } from "@/app/actions/projects";
+import { addProjectLink, updateProjectColor, deleteProject, deleteProjectFile, uploadProjectFile } from "@/app/actions/projects";
 import { useDashboard } from "@/components/dashboard-provider";
 import { Button } from "@/components/ui/button";
 import type { OptimisticProjectFile } from "@/lib/optimistic-rules";
 import { classifyProjectReference } from "@/lib/project-rules";
 
-export function ProjectWorkspace({ projectId, name }: { projectId: string; name: string }) {
+export function ProjectWorkspace({ projectId, name, color }: { projectId: string; name: string; color: string }) {
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false); // uploads and link adds wait for the server, which returns the new row
@@ -25,7 +25,20 @@ export function ProjectWorkspace({ projectId, name }: { projectId: string; name:
   return (
     <section className="flex flex-col gap-3 rounded-lg border p-3">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="font-medium">Reference Files &amp; Links · {name}</h2>
+        <h2 className="flex items-center gap-2 font-medium">
+          <input
+            type="color"
+            value={color}
+            aria-label="Project color"
+            onChange={(e) =>
+              run({ type: "project/upsert", project: { id: projectId, name, color: e.target.value } }, () =>
+                updateProjectColor(projectId, e.target.value),
+              )
+            }
+            className="h-6 w-6 cursor-pointer rounded border-0 bg-transparent p-0"
+          />
+          Reference Files &amp; Links · {name}
+        </h2>
         <Button
           variant="ghost"
           size="sm"

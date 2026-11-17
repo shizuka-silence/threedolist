@@ -25,11 +25,11 @@ export function TaskBoard({ selectedParam, onSelectProject }: { selectedParam?: 
         unassignedCount={filterTasksByProject(state.tasks, "unassigned").length}
         projects={state.projects.map((p) => ({ ...p, taskCount: state.tasks.filter((t) => t.projectId === p.id).length }))}
       />
-      {selectedProject && <ProjectWorkspace projectId={selectedProject.id} name={selectedProject.name} />}
+      {selectedProject && <ProjectWorkspace projectId={selectedProject.id} name={selectedProject.name} color={selectedProject.color} />}
       <ul className="flex flex-col gap-3">
         {visible.map((task) => (
           <DraggableTask key={task.id} id={task.id}>
-            <TaskCard {...task} projects={state.projects} />
+            <TaskCard {...task} projects={state.projects} hideProject={!!selectedProject} />
           </DraggableTask>
         ))}
         {visible.length === 0 && <p className="text-muted-foreground">Nothing to do here. Add a task above.</p>}

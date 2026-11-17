@@ -58,6 +58,19 @@ export async function deleteProject(projectId: string): Promise<Result> {
   return {};
 }
 
+export async function updateProjectColor(projectId: string, color: string): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+  if (!/^#[0-9a-fA-F]{6}$/.test(color)) return { error: "Invalid color." };
+  const updated = await db
+    .update(projects)
+    .set({ color })
+    .where(and(eq(projects.id, projectId), eq(projects.userId, user.id)))
+    .returning({ id: projects.id });
+  if (updated.length === 0) return { error: "Project not found." };
+  return {};
+}
+
 export async function assignTaskToProject(taskId: string, projectId: string | null): Promise<Result> {
   const { user } = await requireUser();
   if (!user) return { error: "Not signed in." };

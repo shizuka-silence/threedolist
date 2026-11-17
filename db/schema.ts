@@ -35,6 +35,11 @@ export const tasks = pgTable("tasks", {
   activeTimerStartedAt: ts("active_timer_started_at"),
   aiClarifyingQuestions: jsonb("ai_clarifying_questions").$type<string[]>(),
   completedAt: ts("completed_at"),
+  deadline: ts("deadline"),
+  // Completing a repeating task spawns the next copy (see completeTask).
+  repeatEvery: integer("repeat_every"),
+  repeatUnit: text("repeat_unit", { enum: ["day", "week", "month"] }),
+  repeatUntil: ts("repeat_until"),
 });
 
 export const taskSubtasks = pgTable("task_subtasks", {
