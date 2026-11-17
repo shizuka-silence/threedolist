@@ -15,6 +15,7 @@ const state = (over: Partial<OptimisticState> = {}): OptimisticState => ({
   tasks: [task({ id: "t1" }), task({ id: "t2", projectId: "p1" })],
   projects: [{ id: "p1", name: "Taxes", color: "#111111" }],
   projectFiles: [{ id: "f1", projectId: "p1", fileName: "W2.pdf", href: "https://x/w2", isLink: false }],
+  completedTasks: [],
   ...over,
 });
 
@@ -142,6 +143,31 @@ describe("server-returned rows (upsert)", () => {
     const file = { id: "f2", projectId: "p1", fileName: "Docs", href: "https://x/docs", isLink: true };
     const withFile = applyOptimisticChange(state(), { type: "file/upsert", file });
     expect(withFile.projectFiles.map((f) => f.id)).toEqual(["f1", "f2"]);
+  });
+});
+
+describe("completed this session (feeds the Receipts tab)", () => {
+  it("complete moves the task into completedTasks, newest first, stamped with the given time", () => {
+    const first = applyOptimisticChange(state(), { type: "task/complete", id: "t1", at: "2026-11-17T10:00:00.000Z" });
+    expect(first.tasks.map((t) => t.id)).toEqual(["t2"]);
+    expect(first.completedTasks).toMatchObject([{ id: "t1", status: "completed", completedAt: "2026-11-17T10:00:00.000Z" }]);
+    const second = applyOptimisticChange(first, { type: "task/complete", id: "t2", at: "2026-11-17T11:00:00.000Z" });
+    expect(second.completedTasks.map((t) => t.id)).toEqual(["t2", "t1"]);
+  });
+
+  it("complete without a time still moves the task (completedAt is null)", () => {
+    const next = applyOptimisticChange(state(), { type: "task/complete", id: "t1" });
+    expect(next.completedTasks).toMatchObject([{ id: "t1", completedAt: null }]);
+  });
+
+  it("deleting a task does not add it to completedTasks", () => {
+    const next = applyOptimisticChange(state(), { type: "task/remove", id: "t1" });
+    expect(next.completedTasks).toEqual([]);
+  });
+
+  it("completing an unknown id changes nothing", () => {
+    const s = state();
+    expect(applyOptimisticChange(s, { type: "task/complete", id: "missing", at: "x" })).toEqual(s);
   });
 });
 
