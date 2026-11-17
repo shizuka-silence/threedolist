@@ -10,8 +10,14 @@ export async function GET(request: NextRequest) {
   if (tokenHash && type === "recovery") {
     const supabase = await createClient();
     const { error } = await supabase.auth.verifyOtp({ type: "recovery", token_hash: tokenHash });
-    if (!error) return NextResponse.redirect(new URL("/reset-password", request.url));
+    if (!error) return redirectTo("/reset-password");
   }
   const message = encodeURIComponent("Reset link is invalid or expired. Request a new one.");
-  return NextResponse.redirect(new URL(`/forgot-password?error=${message}`, request.url));
+  return redirectTo(`/forgot-password?error=${message}`);
+}
+
+// Relative Location on purpose: on Netlify request.url can be the per-deploy host, and the session
+// cookie we just set belongs to the host the user actually visited. The browser resolves it correctly.
+function redirectTo(path: string) {
+  return new NextResponse(null, { status: 303, headers: { Location: path } });
 }
