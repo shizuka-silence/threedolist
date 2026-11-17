@@ -26,15 +26,21 @@ export function BrainDumpBar() {
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-2">
+    <form
+      onSubmit={submit}
+      className="sticky bottom-4 z-10 flex gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/85 p-2 shadow-2xl backdrop-blur-xl"
+    >
       <input
         value={text}
         onChange={(e) => setText(e.target.value)}
         autoFocus
         placeholder="Brain dump… hit Enter"
         aria-label="Brain dump"
-        className="h-12 w-full rounded-md border bg-background px-3 text-base"
+        className="h-12 min-w-0 flex-1 rounded-xl border-0 bg-transparent px-3 text-base outline-none placeholder:text-zinc-500"
       />
+      <button type="submit" className="h-12 shrink-0 rounded-xl bg-zinc-100 px-5 text-sm font-semibold text-zinc-950 hover:bg-white">
+        Add
+      </button>
     </form>
   );
 }

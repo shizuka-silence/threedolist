@@ -220,7 +220,7 @@ export function TaskCard({
                 {project.name}
               </span>
             )}
-            {deadline && <span className={overdue ? "font-medium text-red-600" : ""}>Due {deadline.slice(0, 10)}</span>}
+            {deadline && <span className={overdue ? "font-medium text-red-400" : ""}>Due {deadline.slice(0, 10)}</span>}
             {repeatWeekdays?.length ? (
               <span>↻ {repeatWeekdays.map((n) => DAY_NAMES[n]).join(", ")}</span>
             ) : repeatEvery ? (

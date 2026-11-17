@@ -63,7 +63,7 @@ export function DashboardShell({ initialTab, initialProject, receipts, canSyncGm
             key={t}
             type="button"
             onClick={() => go(t, project)}
-            className={`flex h-10 flex-1 items-center justify-center rounded-md border text-sm font-medium ${tab === t ? "bg-primary text-primary-foreground" : ""}`}
+            className={`flex h-10 flex-1 items-center justify-center rounded-md border text-sm font-medium ${tab === t ? "border-transparent bg-zinc-100 text-zinc-950" : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-200"}`}
           >
             {label}
             {t === "triage" && <TriageBadge />}
@@ -78,8 +78,8 @@ export function DashboardShell({ initialTab, initialProject, receipts, canSyncGm
       ) : tab === "triage" ? (
         <>
           <EmailDumpBox canSyncGmail={canSyncGmail} />
-          <BrainDumpBar />
           <TriageList />
+          <BrainDumpBar />
         </>
       ) : (
         <TaskBoard selectedParam={project} onSelectProject={(id) => go("tasks", id)} />

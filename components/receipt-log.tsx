@@ -6,7 +6,7 @@ import { useDashboard } from "@/components/dashboard-provider";
 import { filterReceiptTasks, formatReceiptVariance } from "@/lib/receipt-rules";
 
 const pill = (on: boolean) =>
-  `flex h-10 shrink-0 items-center gap-2 rounded-md border px-3 text-sm font-medium ${on ? "bg-primary text-primary-foreground" : ""}`;
+  `flex h-10 shrink-0 items-center gap-2 rounded-md border px-3 text-sm font-medium ${on ? "border-transparent bg-zinc-100 text-zinc-950" : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:text-zinc-200"}`;
 
 // Receipts come from the server on each visit to this tab, so they already include anything completed earlier.
 export function ReceiptLog({ receipts: serverReceipts }: { receipts: Receipt[] }) {
@@ -64,12 +64,14 @@ export function ReceiptLog({ receipts: serverReceipts }: { receipts: Receipt[] }
                 <span className="rounded-full border px-2 py-0.5">Unassigned</span>
               )}
               {r.completedAt && <time dateTime={r.completedAt}>{new Date(r.completedAt).toLocaleString()}</time>}
+              <span className="rounded-md bg-muted px-2 py-0.5 text-foreground">
+                {formatReceiptVariance(r.estimatedMinutes, r.actualMinutes).label}
+              </span>
             </div>
-            <p className="font-medium">{r.title}</p>
-            <span className="w-fit rounded-md bg-muted px-2 py-0.5 text-xs">
-              {formatReceiptVariance(r.estimatedMinutes, r.actualMinutes).label}
-            </span>
-            <Proofs proofs={r.proofs} />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-medium">{r.title}</p>
+              <Proofs proofs={r.proofs} />
+            </div>
           </li>
         ))}
         {shown.length === 0 && <p className="text-muted-foreground">No receipts match.</p>}
@@ -112,7 +114,7 @@ function Proofs({ proofs }: { proofs: Receipt["proofs"] }) {
     );
   }
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       {proofs.map((p) =>
         p.type === "image" && p.href ? (
           <button key={p.id} type="button" aria-label="Enlarge proof" onClick={() => setEnlarged(p.href)}>

@@ -1,4 +1,5 @@
 import { and, desc, eq, sql } from "drizzle-orm";
+import { LogOut } from "lucide-react";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
@@ -132,14 +133,16 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
 
   return (
     <DashboardProvider initial={initial}>
-      <main className="mx-auto flex w-full max-w-xl flex-col gap-6 p-4">
-        <header className="flex items-center justify-between gap-2">
+      <main className="mx-auto flex min-h-dvh w-full max-w-xl flex-col gap-6 px-4 pt-6 pb-28">
+        <header className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold">ThreeDoList</h1>
-            <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+            <h1 className="text-xl font-bold tracking-tight">ThreeDoList</h1>
+            <p className="truncate font-mono text-xs text-muted-foreground">{user.email}</p>
           </div>
           <form action={signOut}>
-            <Button type="submit" variant="outline">Sign out</Button>
+            <Button type="submit" variant="ghost" size="icon-lg" aria-label="Sign out" title="Sign out" className="text-muted-foreground">
+              <LogOut />
+            </Button>
           </form>
         </header>
         <DashboardShell

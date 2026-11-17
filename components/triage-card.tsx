@@ -37,6 +37,14 @@ const CATEGORY_LABEL: Record<TriageCategory, string> = {
   reply: "Reply",
 };
 
+// Translucent per-category accents; the active category button in each card doubles as its badge.
+const CATEGORY_BADGE: Record<TriageCategory, string> = {
+  requirement: "border-amber-500/20 bg-amber-500/10 text-amber-300",
+  reply: "border-sky-500/20 bg-sky-500/10 text-sky-300",
+  opportunity: "border-violet-500/20 bg-violet-500/10 text-violet-300",
+  announcement: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
+};
+
 export function TriageCard({ id, category, sourceSubject, summary, suggestedAction, onReclassify }: Props) {
   const defaults = buildPromotionTaskPayload({ category, sourceSubject, summary, suggestedAction });
   const [editing, setEditing] = useState(false);
@@ -58,9 +66,9 @@ export function TriageCard({ id, category, sourceSubject, summary, suggestedActi
   const promoteLabel = PROMOTE_LABEL[category];
 
   return (
-    <li className="flex flex-col gap-2 rounded-lg border p-3">
+    <li className="flex flex-col gap-2 rounded-xl border border-zinc-800/75 bg-[#111114] p-3.5">
       <p className="font-medium">{sourceSubject}</p>
-      {summary && <p className="text-sm text-muted-foreground">{summary}</p>}
+      {summary && <p className="truncate font-mono text-xs text-zinc-400">{summary}</p>}
       {suggestedAction && <p className="text-sm">Suggested: {suggestedAction}</p>}
 
       <div role="group" aria-label="Category" className="flex flex-wrap gap-1">
@@ -71,7 +79,7 @@ export function TriageCard({ id, category, sourceSubject, summary, suggestedActi
             aria-pressed={c === category}
             disabled={c === category}
             onClick={() => onReclassify(id, c)}
-            className={`rounded-full border px-2 py-1 text-xs ${c === category ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            className={`rounded-full border px-2.5 py-1 text-xs ${c === category ? CATEGORY_BADGE[c] : "border-zinc-800 text-zinc-500 hover:text-zinc-300"}`}
           >
             {CATEGORY_LABEL[c]}
           </button>

@@ -77,6 +77,31 @@ describe("normalizeParsedTriageItems", () => {
     expect(normalizeParsedTriageItems(null)).toEqual([]);
     expect(normalizeParsedTriageItems({})).toEqual([]);
   });
+
+  describe("sourceUrl", () => {
+    const emails = [{ url: "https://mail.google.com/a" }, { url: "https://mail.google.com/b" }, {}];
+    const sourceUrlFor = (emailNumber: unknown, list = emails) =>
+      normalizeParsedTriageItems([{ category: "reply", sourceSubject: "X", emailNumber }], list)[0].sourceUrl;
+
+    it("takes the url from the email the AI says the item came from (1-based)", () => {
+      expect(sourceUrlFor(2)).toBe("https://mail.google.com/b");
+    });
+
+    it("leaves sourceUrl unset when the email has no url, the number is out of range, or it is not a number", () => {
+      expect(sourceUrlFor(3)).toBeUndefined();
+      expect(sourceUrlFor(0)).toBeUndefined();
+      expect(sourceUrlFor(99)).toBeUndefined();
+      expect(sourceUrlFor("1")).toBeUndefined();
+    });
+
+    it("never accepts a non-http(s) url", () => {
+      expect(sourceUrlFor(1, [{ url: "javascript:alert(1)" }])).toBeUndefined();
+    });
+
+    it("works without an emails list", () => {
+      expect(normalizeParsedTriageItems([{ category: "reply", sourceSubject: "X", emailNumber: 1 }])[0].sourceUrl).toBeUndefined();
+    });
+  });
 });
 
 describe("buildPromotionTaskPayload", () => {
