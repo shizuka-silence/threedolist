@@ -78,9 +78,31 @@ export function ReceiptLog({ receipts: serverReceipts }: { receipts: Receipt[] }
   );
 }
 
+// Native <dialog> gives Esc-to-close and focus handling; clicking the backdrop or image also closes it.
+function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  return (
+    <dialog
+      ref={(d) => { if (d && !d.open) d.showModal(); }}
+      onClose={onClose}
+      onClick={(e) => e.currentTarget.close()}
+      className="m-auto max-h-[95vh] max-w-[95vw] bg-transparent p-0 backdrop:bg-black/80"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt="Proof, enlarged" className="max-h-[90vh] max-w-[95vw] rounded-md object-contain" />
+      <a
+        href={src} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+        className="mt-2 block text-center text-sm text-white underline"
+      >
+        Open in new tab
+      </a>
+    </dialog>
+  );
+}
+
 // Proofs render only after a tap, so images aren't downloaded until asked for (saves mobile data).
 function Proofs({ proofs }: { proofs: Receipt["proofs"] }) {
   const [open, setOpen] = useState(false);
+  const [enlarged, setEnlarged] = useState<string | null>(null);
   if (proofs.length === 0) return null;
   if (!open) {
     return (
@@ -93,10 +115,10 @@ function Proofs({ proofs }: { proofs: Receipt["proofs"] }) {
     <div className="flex flex-wrap items-center gap-2">
       {proofs.map((p) =>
         p.type === "image" && p.href ? (
-          <a key={p.id} href={p.href} target="_blank" rel="noreferrer">
+          <button key={p.id} type="button" aria-label="Enlarge proof" onClick={() => setEnlarged(p.href)}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={p.href} alt={p.caption ?? "Proof"} className="h-16 w-16 rounded-md border object-cover" />
-          </a>
+          </button>
         ) : p.type === "note" ? (
           <span key={p.id} className="rounded-md border px-2 py-1 text-xs">{p.text}</span>
         ) : p.href ? (
@@ -106,6 +128,7 @@ function Proofs({ proofs }: { proofs: Receipt["proofs"] }) {
         ) : null,
       )}
       <button type="button" onClick={() => setOpen(false)} className="h-9 rounded-md px-2 text-sm text-muted-foreground">Hide</button>
+      {enlarged && <Lightbox src={enlarged} onClose={() => setEnlarged(null)} />}
     </div>
   );
 }

@@ -96,10 +96,16 @@ export async function addTaskProof(formData: FormData): Promise<Result & { thumb
     const { error } = await supabase.storage.from(PROOF_BUCKET).upload(path, file, { contentType: file.type });
     if (error) return { error: `Upload failed: ${error.message}` };
 
-    const [proof] = await db
-      .insert(taskProofs)
-      .values({ taskId, type: "image", storagePathOrUrl: path, caption })
-      .returning({ id: taskProofs.id });
+    let proof;
+    try {
+      [proof] = await db
+        .insert(taskProofs)
+        .values({ taskId, type: "image", storagePathOrUrl: path, caption })
+        .returning({ id: taskProofs.id });
+    } catch (e) {
+      await supabase.storage.from(PROOF_BUCKET).remove([path]); // don't leave an upload no row points to
+      return { error: `Could not save proof: ${(e as Error).message}` };
+    }
     const { data: signed } = await supabase.storage.from(PROOF_BUCKET).createSignedUrl(path, 3600);
     return { thumbnail: signed ? { id: proof.id, url: signed.signedUrl } : undefined };
   } else {
@@ -263,8 +269,12 @@ export async function deleteTask(taskId: string): Promise<Result> {
     .from(taskProofs)
     .where(and(eq(taskProofs.taskId, taskId), eq(taskProofs.type, "image")));
 
+  // Storage first: if it fails the task stays, so the images are never left behind without a row pointing to them.
+  if (images.length) {
+    const { error } = await supabase.storage.from(PROOF_BUCKET).remove(images.map((i) => i.path));
+    if (error) return { error: `Could not remove proof images: ${error.message}` };
+  }
   await db.delete(tasks).where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id))); // proofs cascade
-  if (images.length) await supabase.storage.from(PROOF_BUCKET).remove(images.map((i) => i.path));
   return {};
 }
 

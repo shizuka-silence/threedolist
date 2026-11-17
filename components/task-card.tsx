@@ -12,7 +12,9 @@ import { Button } from "@/components/ui/button";
 import type { TaskSchedule } from "@/lib/optimistic-rules";
 import { calculateLoggedMinutes } from "@/lib/task-rules";
 
-const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+// Elements that keep their own double-click behavior instead of toggling the card.
+const CONTROLS = "input, button, a, label, select, textarea, img";
+const DAY_NAMES =["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 type Props = TaskSchedule & {
   id: string;
@@ -53,6 +55,7 @@ export function TaskCard({
   const [trim, setTrim] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const hovered = useRef(false);
+  const pointerDown = useRef<{ x: number; y: number } | null>(null);
   const card = useRef<HTMLDivElement>(null);
   const isProof = completionType === "proof";
 
@@ -187,8 +190,23 @@ export function TaskCard({
     <div
       ref={card}
       className={`flex flex-col gap-3 rounded-lg border p-3 ${active ? "ring-2 ring-primary bg-primary/5" : ""}`}
-      onPointerDownCapture={onActivate}
+      onPointerDownCapture={(e) => { pointerDown.current = { x: e.clientX, y: e.clientY }; onActivate?.(); }}
       onFocusCapture={onActivate}
+      onMouseDown={(e) => {
+        // The 2nd press of a double-click would select a word; a selected word then turns the next press into a text drag that eats the click.
+        if (e.detail > 1 && !(e.target as HTMLElement).closest(CONTROLS)) e.preventDefault();
+      }}
+      onClick={(e) => {
+        // Not onDoubleClick: the browser fires that only for click #2, so a quick second double-click (clicks 3 and 4) would be ignored.
+        if (e.detail < 2 || e.detail % 2 !== 0) return;
+        // Anywhere on the card, but not on controls (they keep their own double-click, e.g. selecting text in a field).
+        if ((e.target as HTMLElement).closest(CONTROLS)) return;
+        // A press that turned into a drag is not a double-click.
+        const start = pointerDown.current;
+        if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) return;
+        window.getSelection()?.removeAllRanges(); // double-click would otherwise leave a word highlighted
+        setExpanded((v) => !v);
+      }}
       onMouseEnter={() => (hovered.current = true)}
       onMouseLeave={() => (hovered.current = false)}
     >

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { addProjectLink, updateProjectColor, deleteProject, deleteProjectFile, uploadProjectFile } from "@/app/actions/projects";
+import { addProjectLink, updateProjectColor, deleteProject, deleteProjectFile, renameProject, uploadProjectFile } from "@/app/actions/projects";
 import { useDashboard } from "@/components/dashboard-provider";
 import { Button } from "@/components/ui/button";
 import type { OptimisticProjectFile } from "@/lib/optimistic-rules";
@@ -25,7 +25,7 @@ export function ProjectWorkspace({ projectId, name, color }: { projectId: string
   return (
     <section className="flex flex-col gap-3 rounded-lg border p-3">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 font-medium">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <input
             type="color"
             value={color}
@@ -35,10 +35,21 @@ export function ProjectWorkspace({ projectId, name, color }: { projectId: string
                 updateProjectColor(projectId, e.target.value),
               )
             }
-            className="h-6 w-6 cursor-pointer rounded border-0 bg-transparent p-0"
+            className="h-8 w-8 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0"
           />
-          Reference Files &amp; Links · {name}
-        </h2>
+          <input
+            key={name} // remounts when the saved name changes
+            defaultValue={name}
+            aria-label="Project name"
+            onBlur={(e) => {
+              const next = e.target.value.trim();
+              if (!next) { e.target.value = name; return; } // a project can't be nameless
+              if (next !== name) run({ type: "project/upsert", project: { id: projectId, name: next, color } }, () => renameProject(projectId, next));
+            }}
+            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+            className="h-9 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 text-lg font-medium hover:border-input focus:border-input"
+          />
+        </div>
         <Button
           variant="ghost"
           size="sm"
@@ -52,6 +63,7 @@ export function ProjectWorkspace({ projectId, name, color }: { projectId: string
         </Button>
       </div>
 
+      <h3 className="text-sm font-medium text-muted-foreground">Reference Files &amp; Links</h3>
       <ul className="flex flex-col gap-1">
         {files.map((f) => (
           <li key={f.id} className="flex items-center justify-between gap-2 text-sm">

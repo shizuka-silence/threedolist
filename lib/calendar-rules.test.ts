@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildSlotTimestamp, computeBlockHeightPx, formatVarianceBadge } from "./calendar-rules";
+import {
+  buildSlotTimestamp, computeBlockHeightPx, formatVarianceBadge, groupTasksByDay, monthGrid, shiftDate, weekDays,
+} from "./calendar-rules";
 
 describe("computeBlockHeightPx", () => {
   it("scales height proportionally to estimated minutes", () => {
@@ -60,5 +62,82 @@ describe("buildSlotTimestamp", () => {
 
   it("throws on a malformed day string", () => {
     expect(() => buildSlotTimestamp("not-a-date", 9, 0)).toThrow();
+  });
+});
+
+describe("weekDays", () => {
+  it("returns the Sunday-to-Saturday week containing the day", () => {
+    expect(weekDays("2026-11-17")).toEqual([
+      "2026-11-15", "2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20", "2026-11-21",
+    ]);
+  });
+
+  it("starts on the day itself when it is a Sunday", () => {
+    expect(weekDays("2026-11-15")[0]).toBe("2026-11-15");
+  });
+
+  it("crosses month and year boundaries", () => {
+    expect(weekDays("2026-12-31")).toEqual([
+      "2026-12-27", "2026-12-28", "2026-12-29", "2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02",
+    ]);
+  });
+});
+
+describe("monthGrid", () => {
+  it("covers whole Sunday-to-Saturday weeks including neighbouring months", () => {
+    const grid = monthGrid("2026-11-17");
+    expect(grid).toHaveLength(35);
+    expect(grid[0]).toBe("2026-11-01");
+    expect(grid[34]).toBe("2026-12-05");
+  });
+
+  it("uses only 4 rows when the month fits exactly", () => {
+    const grid = monthGrid("2026-02-10"); // Feb 2026 runs Sunday to Saturday
+    expect(grid).toHaveLength(28);
+    expect(grid[0]).toBe("2026-02-01");
+    expect(grid[27]).toBe("2026-02-28");
+  });
+
+  it("uses 6 rows when the month spans six weeks", () => {
+    const grid = monthGrid("2026-08-15");
+    expect(grid).toHaveLength(42);
+    expect(grid[0]).toBe("2026-07-26");
+    expect(grid[41]).toBe("2026-09-05");
+  });
+});
+
+describe("shiftDate", () => {
+  it("moves by days and weeks", () => {
+    expect(shiftDate("2026-02-28", "day", 1)).toBe("2026-03-01");
+    expect(shiftDate("2026-03-02", "week", -1)).toBe("2026-02-23");
+  });
+
+  it("moves by months across a year boundary", () => {
+    expect(shiftDate("2026-12-15", "month", 1)).toBe("2027-01-15");
+    expect(shiftDate("2026-01-15", "month", -1)).toBe("2025-12-15");
+  });
+
+  it("clamps to the last day of a shorter month", () => {
+    expect(shiftDate("2026-01-31", "month", 1)).toBe("2026-02-28");
+    expect(shiftDate("2024-01-31", "month", 1)).toBe("2024-02-29");
+    expect(shiftDate("2026-03-31", "month", -1)).toBe("2026-02-28");
+  });
+});
+
+describe("groupTasksByDay", () => {
+  const at = (day: number, hour: number, minute = 0) => new Date(2026, 10, day, hour, minute).toISOString(); // local time
+
+  it("groups by local day and sorts each day by start time", () => {
+    const late = { id: "late", scheduledStart: at(17, 15) };
+    const early = { id: "early", scheduledStart: at(17, 9, 30) };
+    const next = { id: "next", scheduledStart: at(18, 8) };
+    const grouped = groupTasksByDay([late, next, early]);
+    expect(grouped.get("2026-11-17")).toEqual([early, late]);
+    expect(grouped.get("2026-11-18")).toEqual([next]);
+  });
+
+  it("ignores unscheduled tasks", () => {
+    const grouped = groupTasksByDay([{ id: "a", scheduledStart: null }]);
+    expect(grouped.size).toBe(0);
   });
 });

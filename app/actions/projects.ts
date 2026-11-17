@@ -76,6 +76,24 @@ export async function reorderProjects(ids: string[]): Promise<Result> {
   return {};
 }
 
+export async function renameProject(projectId: string, name: string): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+  let valid;
+  try {
+    valid = validateProjectInput(name);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+  const updated = await db
+    .update(projects)
+    .set({ name: valid.name })
+    .where(and(eq(projects.id, projectId), eq(projects.userId, user.id)))
+    .returning({ id: projects.id });
+  if (updated.length === 0) return { error: "Project not found." };
+  return {};
+}
+
 export async function updateProjectColor(projectId: string, color: string): Promise<Result> {
   const { user } = await requireUser();
   if (!user) return { error: "Not signed in." };
@@ -125,7 +143,13 @@ export async function uploadProjectFile(projectId: string, formData: FormData): 
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, { contentType: file.type || undefined });
   if (error) return { error: `Upload failed: ${error.message}` };
 
-  const [row] = await db.insert(projectFiles).values({ projectId, fileName, fileUrl: path }).returning();
+  let row;
+  try {
+    [row] = await db.insert(projectFiles).values({ projectId, fileName, fileUrl: path }).returning();
+  } catch (e) {
+    await supabase.storage.from(BUCKET).remove([path]); // don't leave an upload no row points to
+    return { error: `Could not save file: ${(e as Error).message}` };
+  }
   const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600);
   return { file: toClientProjectFile(row, signed?.signedUrl ?? null) };
 }

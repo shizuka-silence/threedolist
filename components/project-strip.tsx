@@ -1,11 +1,9 @@
 "use client";
 
 import { useDndContext, useDraggable, useDroppable } from "@dnd-kit/core";
-import { useState } from "react";
 import { createProject } from "@/app/actions/projects";
 import { useDashboard } from "@/components/dashboard-provider";
-import { validateProjectInput } from "@/lib/project-rules";
-import { Button } from "@/components/ui/button";
+import { DEFAULT_PROJECT_COLOR } from "@/lib/project-rules";
 
 type Props = {
   selected: string; // "all" | "unassigned" | project id
@@ -46,33 +44,21 @@ function Folder({ dropId, dragId, onSelect, selected, label, count, color, index
 }
 
 export function ProjectStrip({ selected, onSelect, allCount, unassignedCount, projects }: Props) {
-  const [name, setName] = useState("");
   const { run } = useDashboard();
   const activeId = useDndContext().active?.id;
   const draggedIndex = projects.findIndex((p) => `folder:${p.id}` === activeId); // -1 when nothing, or a task, is dragged
 
-  function add(event: React.FormEvent) {
-    event.preventDefault();
-    let valid;
-    try {
-      valid = validateProjectInput(name); // same checks the server makes, so the folder can appear at once
-    } catch (e) {
-      run(null, async () => ({ error: (e as Error).message }));
-      return;
-    }
-    const project = { id: crypto.randomUUID(), ...valid };
-    const saved = name;
-    setName("");
-    run({ type: "project/upsert", project }, async () => {
-      const result = await createProject(saved, valid.color, project.id);
-      if (result.error) setName((current) => current || saved);
-      return result;
-    });
+  // Creates "New project" and opens it, where the name field is ready to be renamed.
+  function add() {
+    const project = { id: crypto.randomUUID(), name: "New project", color: DEFAULT_PROJECT_COLOR };
+    onSelect(project.id);
+    run({ type: "project/upsert", project }, () => createProject(project.name, project.color, project.id));
   }
 
   return (
-    <div>
-      <div className="flex gap-2 overflow-x-auto pb-1">
+    <div className="flex items-start gap-2">
+      {/* Only the folders scroll; the + button stays pinned at the right. */}
+      <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1">
         <Folder onSelect={() => onSelect("all")} selected={selected === "all"} label="All" count={allCount} />
         <Folder
           dropId="project:none" onSelect={() => onSelect("unassigned")} selected={selected === "unassigned"}
@@ -84,18 +70,16 @@ export function ProjectStrip({ selected, onSelect, allCount, unassignedCount, pr
             label={p.name} count={p.taskCount} color={p.color} index={i} draggedIndex={draggedIndex >= 0 ? draggedIndex : undefined}
           />
         ))}
-        {/* Trailing chip so "new project" sits right next to the folders it adds to. */}
-        <form onSubmit={add} className="flex shrink-0 gap-1">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="+ New project"
-            aria-label="New project name"
-            className="h-10 w-36 rounded-md border border-dashed bg-background px-3 text-sm"
-          />
-          {name.trim() && <Button type="submit" variant="outline" className="h-10">Add</Button>}
-        </form>
       </div>
+      <button
+        type="button"
+        onClick={add}
+        aria-label="New project"
+        title="New project"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-dashed text-xl leading-none"
+      >
+        +
+      </button>
     </div>
   );
 }
