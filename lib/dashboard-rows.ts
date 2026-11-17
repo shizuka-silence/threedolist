@@ -17,6 +17,7 @@ type TaskRow = {
   aiClarifyingQuestions: string[] | null;
   deadline: Date | null;
   repeatEvery: number | null;
+  repeatWeekdays: number[] | null;
   repeatUnit: "day" | "week" | "month" | null;
   repeatUntil: Date | null;
 };
@@ -38,6 +39,7 @@ export function toClientTask(
     aiClarifyingQuestions: row.aiClarifyingQuestions,
     deadline: row.deadline?.toISOString() ?? null,
     repeatEvery: row.repeatEvery,
+    repeatWeekdays: row.repeatWeekdays,
     repeatUnit: row.repeatUnit,
     repeatUntil: row.repeatUntil?.toISOString() ?? null,
     proofCount: extra.proofCount ?? 0,

@@ -20,3 +20,15 @@ export function nextDeadline(
   }
   return until && next > until ? null : next;
 }
+
+/** Next date after `base` that falls on one of `weekdays` (0=Sun..6=Sat, UTC), or null if none/past `until`. */
+export function nextWeekdayDeadline(base: Date, weekdays: number[], until: Date | null): Date | null {
+  if (weekdays.length === 0) return null;
+  for (let i = 1; i <= 7; i++) {
+    const next = new Date(base);
+    next.setUTCDate(next.getUTCDate() + i);
+    if (!weekdays.includes(next.getUTCDay())) continue;
+    return until && next > until ? null : next;
+  }
+  return null;
+}

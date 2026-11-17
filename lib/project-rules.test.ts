@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyProjectReference, filterTasksByProject, validateProjectInput } from "./project-rules";
+import { classifyProjectReference, filterTasksByProject, moveProject, validateProjectInput } from "./project-rules";
 
 describe("validateProjectInput", () => {
   it("trims the project name", () => {
@@ -82,5 +82,32 @@ describe("filterTasksByProject", () => {
 
   it("returns an empty list for a project with no tasks", () => {
     expect(filterTasksByProject(tasks, "zzz")).toEqual([]);
+  });
+});
+
+describe("moveProject (drag to reorder)", () => {
+  const ids = ["a", "b", "c", "d"];
+
+  it("dragging right lands after the target", () => {
+    expect(moveProject(ids, "a", "c")).toEqual(["b", "c", "a", "d"]);
+  });
+
+  it("dragging left lands before the target", () => {
+    expect(moveProject(ids, "d", "b")).toEqual(["a", "d", "b", "c"]);
+  });
+
+  it("returns the same order when dropped on itself", () => {
+    expect(moveProject(ids, "b", "b")).toEqual(ids);
+  });
+
+  it("returns the same order for an unknown id", () => {
+    expect(moveProject(ids, "x", "b")).toEqual(ids);
+    expect(moveProject(ids, "a", "x")).toEqual(ids);
+  });
+
+  it("does not mutate the input", () => {
+    const copy = [...ids];
+    moveProject(copy, "a", "d");
+    expect(copy).toEqual(ids);
   });
 });

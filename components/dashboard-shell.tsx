@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import type { Receipt } from "@/app/receipts";
-import { AddTaskForm } from "@/components/add-task-form";
 import { BrainDumpBar } from "@/components/brain-dump-bar";
 import { DayCalendar } from "@/components/day-calendar";
 import { EmailDumpBox } from "@/components/email-dump-box";
@@ -83,10 +82,7 @@ export function DashboardShell({ initialTab, initialProject, receipts, canSyncGm
           <TriageList />
         </>
       ) : (
-        <>
-          <AddTaskForm />
-          <TaskBoard selectedParam={project} onSelectProject={(id) => go("tasks", id)} />
-        </>
+        <TaskBoard selectedParam={project} onSelectProject={(id) => go("tasks", id)} />
       )}
     </>
   );

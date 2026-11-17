@@ -1,13 +1,17 @@
 "use client";
 
-import { DndContext, MouseSensor, pointerWithin, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { DndContext, MouseSensor, pointerWithin, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { assignTaskToProject } from "@/app/actions/projects";
 import { useDashboard } from "@/components/dashboard-provider";
 
 // Drop targets are ProjectStrip folders (id "project:<uuid>" or "project:none"); draggables are DraggableTask.
 export function ProjectDnd({ children }: { children: React.ReactNode }) {
   const { run } = useDashboard();
-  const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 8 } }));
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    // Long-press to pick up on touch, so a normal swipe still scrolls the page.
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
+  );
 
   function onDragEnd({ active, over }: DragEndEvent) {
     const target = String(over?.id ?? "");

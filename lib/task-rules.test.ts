@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertCanComplete, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate } from "./task-rules";
+import { assertCanComplete, assertValidLoggedMinutes, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate } from "./task-rules";
 
 describe("assertCanComplete (proof-of-work gate)", () => {
   it("throws for a proof task with no proofs", () => {
@@ -42,6 +42,34 @@ describe("calculateLoggedMinutes (timer + idle trim)", () => {
 
   it("clamps to 0 when endedAt is before startedAt", () => {
     expect(calculateLoggedMinutes({ startedAt, endedAt: minutesLater(-5), trimmedIdleMinutes: 0 })).toBe(0);
+  });
+});
+
+describe("calculateLoggedMinutes (added minutes)", () => {
+  const startedAt = new Date("2026-01-01T10:00:00Z");
+  const minutesLater = (m: number) => new Date(startedAt.getTime() + m * 60_000);
+
+  it("adds extra minutes on top of the elapsed time", () => {
+    expect(calculateLoggedMinutes({ startedAt, endedAt: minutesLater(25), trimmedIdleMinutes: 0, addedMinutes: 15 })).toBe(40);
+  });
+
+  it("combines trim and added minutes", () => {
+    expect(calculateLoggedMinutes({ startedAt, endedAt: minutesLater(25), trimmedIdleMinutes: 10, addedMinutes: 5 })).toBe(20);
+  });
+
+  it("treats a missing addedMinutes as 0", () => {
+    expect(calculateLoggedMinutes({ startedAt, endedAt: minutesLater(25), trimmedIdleMinutes: 0 })).toBe(25);
+  });
+});
+
+describe("assertValidLoggedMinutes (manual time entry)", () => {
+  it("accepts whole minutes from 1 to 1440", () => {
+    expect(() => assertValidLoggedMinutes(1)).not.toThrow();
+    expect(() => assertValidLoggedMinutes(1440)).not.toThrow();
+  });
+
+  it.each([0, -5, 1441, 2.5, Number.NaN])("rejects %s", (n) => {
+    expect(() => assertValidLoggedMinutes(n)).toThrow();
   });
 });
 

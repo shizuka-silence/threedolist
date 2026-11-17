@@ -6,7 +6,8 @@ import { useDashboard } from "@/components/dashboard-provider";
 import { buildOptimisticTask } from "@/lib/optimistic-rules";
 import { Button } from "@/components/ui/button";
 
-export function AddTaskForm() {
+// projectId: the folder currently open, so new tasks land in it (null in All / Unassigned).
+export function AddTaskForm({ projectId }: { projectId: string | null }) {
   const [title, setTitle] = useState("");
   const [minutes, setMinutes] = useState("");
   const [completionType, setCompletionType] = useState<"tick" | "proof">("proof");
@@ -19,12 +20,12 @@ export function AddTaskForm() {
     if (!trimmed) return;
     const estimatedMinutes = Number.isInteger(Number(minutes)) && Number(minutes) > 0 ? Number(minutes) : undefined;
     const id = crypto.randomUUID();
-    const task = { ...buildOptimisticTask(id, trimmed, completionType), estimatedMinutes: estimatedMinutes ?? null };
+    const task = { ...buildOptimisticTask(id, trimmed, completionType), estimatedMinutes: estimatedMinutes ?? null, projectId };
     const saved = { title, minutes };
     setTitle("");
     setMinutes("");
     run({ type: "task/upsert", task }, async () => {
-      const result = await createTask({ id, title: trimmed, completionType, estimatedMinutes });
+      const result = await createTask({ id, title: trimmed, completionType, estimatedMinutes, projectId });
       if (result.error) {
         setTitle((t) => t || saved.title);
         setMinutes((m) => m || saved.minutes);
@@ -60,7 +61,7 @@ export function AddTaskForm() {
           variant={completionType === "tick" ? "default" : "outline"}
           aria-pressed={completionType === "tick"}
           onClick={() => setCompletionType("tick")}
-          className="h-10 flex-1"
+          className="h-8 px-3 text-sm"
         >
           Tick
         </Button>
@@ -69,14 +70,14 @@ export function AddTaskForm() {
           variant={completionType === "proof" ? "default" : "outline"}
           aria-pressed={completionType === "proof"}
           onClick={() => setCompletionType("proof")}
-          className="h-10 flex-1"
+          className="h-8 px-3 text-sm"
         >
           Proof
         </Button>
-        <Button type="submit" className="h-10 flex-1">
-          Add
-        </Button>
       </div>
+      <Button type="submit" size="lg" className="h-12 w-full">
+        Add
+      </Button>
     </form>
   );
 }

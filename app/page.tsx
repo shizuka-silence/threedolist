@@ -50,6 +50,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
         aiClarifyingQuestions: tasks.aiClarifyingQuestions,
         deadline: tasks.deadline,
         repeatEvery: tasks.repeatEvery,
+        repeatWeekdays: tasks.repeatWeekdays,
         repeatUnit: tasks.repeatUnit,
         repeatUntil: tasks.repeatUntil,
         proofCount,

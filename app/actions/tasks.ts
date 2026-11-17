@@ -2,7 +2,7 @@
 
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { taskProofs, taskSubtasks, tasks, timeLogs } from "@/db/schema";
+import { projects, taskProofs, taskSubtasks, tasks, timeLogs } from "@/db/schema";
 import { generateTaskPrep } from "@/lib/ai";
 import { isUuid, toClientTask } from "@/lib/dashboard-rows";
 import type { OptimisticSubtask, OptimisticTask, TaskSchedule } from "@/lib/optimistic-rules";
@@ -10,7 +10,7 @@ import {
   assertCanComplete, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate, type AiPrepParts,
 } from "@/lib/task-rules";
 import { assertCanDeleteTask } from "@/lib/receipt-rules";
-import { nextDeadline } from "@/lib/recurrence";
+import { nextDeadline, nextWeekdayDeadline } from "@/lib/recurrence";
 import { createClient } from "@/lib/supabase/server";
 
 // Drizzle bypasses RLS, so every action below must call requireUser() and filter by user.id.
@@ -37,6 +37,7 @@ export async function createTask(input: {
   completionType: "tick" | "proof";
   estimatedMinutes?: number;
   notes?: string;
+  projectId?: string | null;
 }): Promise<Result & { task?: OptimisticTask }> {
   const { user } = await requireUser();
   if (!user) return { error: "Not signed in." };
@@ -50,10 +51,19 @@ export async function createTask(input: {
     return { error: "Estimated minutes must be a whole number above 0." };
   }
 
+  if (input.projectId) {
+    const [owned] = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(eq(projects.id, input.projectId), eq(projects.userId, user.id)));
+    if (!owned) return { error: "Project not found." };
+  }
+
   const [row] = await db
     .insert(tasks)
     .values({
       id: input.id,
+      projectId: input.projectId ?? null,
       userId: user.id,
       title,
       completionType: input.completionType,
@@ -120,8 +130,12 @@ export async function completeTask(taskId: string): Promise<Result & { nextTask?
     .set({ status: "completed", completedAt: new Date() })
     .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)));
 
-  if (!task.repeatEvery || !task.repeatUnit) return {};
-  const next = nextDeadline(task.deadline ?? new Date(), task.repeatEvery, task.repeatUnit, task.repeatUntil);
+  const base = task.deadline ?? new Date();
+  const next = task.repeatWeekdays?.length
+    ? nextWeekdayDeadline(base, task.repeatWeekdays, task.repeatUntil)
+    : task.repeatEvery && task.repeatUnit
+      ? nextDeadline(base, task.repeatEvery, task.repeatUnit, task.repeatUntil)
+      : null;
   if (!next) return {};
   const [row] = await db
     .insert(tasks)
@@ -134,6 +148,7 @@ export async function completeTask(taskId: string): Promise<Result & { nextTask?
       estimatedMinutes: task.estimatedMinutes,
       deadline: next,
       repeatEvery: task.repeatEvery,
+      repeatWeekdays: task.repeatWeekdays,
       repeatUnit: task.repeatUnit,
       repeatUntil: task.repeatUntil,
     })
@@ -249,17 +264,20 @@ export async function updateTaskSchedule(taskId: string, s: TaskSchedule): Promi
   const date = (v: string | null) => (v ? new Date(v) : null);
   const [deadline, repeatUntil] = [date(s.deadline), date(s.repeatUntil)];
   if ([deadline, repeatUntil].some((d) => d && Number.isNaN(d.getTime()))) return { error: "Invalid date." };
-  if (s.repeatEvery !== null && (!Number.isInteger(s.repeatEvery) || s.repeatEvery < 1 || !s.repeatUnit)) {
+  if (s.repeatEvery !== null && !s.repeatWeekdays?.length && (!Number.isInteger(s.repeatEvery) || s.repeatEvery < 1 || !s.repeatUnit)) {
     return { error: "Repeat needs a whole number above 0 and a unit." };
   }
-  const repeating = s.repeatEvery !== null;
+  const weekdays = s.repeatWeekdays?.length ? s.repeatWeekdays : null;
+  if (weekdays && !weekdays.every((n) => Number.isInteger(n) && n >= 0 && n <= 6)) return { error: "Invalid weekday." };
+  const repeating = s.repeatEvery !== null || weekdays !== null;
 
   const updated = await db
     .update(tasks)
     .set({
       deadline,
-      repeatEvery: s.repeatEvery,
-      repeatUnit: repeating ? s.repeatUnit : null,
+      repeatEvery: weekdays ? null : s.repeatEvery,
+      repeatWeekdays: weekdays,
+      repeatUnit: repeating && !weekdays ? s.repeatUnit : null,
       repeatUntil: repeating ? repeatUntil : null,
     })
     .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)))

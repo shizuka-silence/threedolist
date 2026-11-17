@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import type { TaskSchedule } from "@/lib/optimistic-rules";
 import { calculateLoggedMinutes } from "@/lib/task-rules";
 
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 type Props = TaskSchedule & {
   id: string;
   title: string;
@@ -26,12 +28,14 @@ type Props = TaskSchedule & {
   subtasks: { id: string; label: string; isCompleted: boolean; source: "user" | "ai_pitfall" }[];
   projectId: string | null;
   projects: { id: string; name: string; color: string }[];
+  active?: boolean; // last-touched card: highlighted so it is clear where Ctrl+V / keyboard input goes
+  onActivate?: () => void;
   hideProject?: boolean; // inside a project folder the project tag is redundant
 };
 
 export function TaskCard({
   id, title, completionType, estimatedMinutes, actualMinutes, activeTimerStartedAt, proofCount, thumbnails,
-  aiClarifyingQuestions, subtasks, projectId, projects, deadline, repeatEvery, repeatUnit, repeatUntil, hideProject,
+  aiClarifyingQuestions, subtasks, projectId, projects, deadline, repeatEvery, repeatWeekdays, repeatUnit, repeatUntil, hideProject, active, onActivate,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [note, setNote] = useState("");
@@ -135,7 +139,7 @@ export function TaskCard({
   }
 
   const scheduleChange = (patch: Partial<TaskSchedule>) => {
-    const schedule = { deadline, repeatEvery, repeatUnit, repeatUntil, ...patch };
+    const schedule: TaskSchedule = { deadline, repeatEvery, repeatWeekdays, repeatUnit, repeatUntil, ...patch };
     run({ type: "task/setSchedule", id, schedule }, () => updateTaskSchedule(id, schedule));
   };
   const toIso = (date: string) => (date ? `${date}T00:00:00.000Z` : null);
@@ -151,7 +155,9 @@ export function TaskCard({
   return (
     <div
       ref={card}
-      className="flex flex-col gap-3 rounded-lg border p-3"
+      className={`flex flex-col gap-3 rounded-lg border p-3 ${active ? "ring-2 ring-primary bg-primary/5" : ""}`}
+      onPointerDownCapture={onActivate}
+      onFocusCapture={onActivate}
       onMouseEnter={() => (hovered.current = true)}
       onMouseLeave={() => (hovered.current = false)}
     >
@@ -175,7 +181,11 @@ export function TaskCard({
               </span>
             )}
             {deadline && <span className={overdue ? "font-medium text-red-600" : ""}>Due {deadline.slice(0, 10)}</span>}
-            {repeatEvery && <span>↻ {repeatEvery} {repeatUnit}</span>}
+            {repeatWeekdays?.length ? (
+              <span>↻ {repeatWeekdays.map((n) => DAY_NAMES[n]).join(", ")}</span>
+            ) : repeatEvery ? (
+              <span>↻ {repeatEvery} {repeatUnit}</span>
+            ) : null}
             {isProof && <span>{proofCount} attached</span>}
           </p>
         </button>
@@ -229,8 +239,29 @@ export function TaskCard({
                 className={fieldClass}
               />
             </label>
+            <div className="flex flex-wrap items-center gap-1 text-sm">
+              On
+              {DAY_NAMES.map((name, n) => {
+                const on = repeatWeekdays?.includes(n) ?? false;
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    aria-pressed={on}
+                    aria-label={name}
+                    onClick={() => {
+                      const next = on ? (repeatWeekdays ?? []).filter((d) => d !== n) : [...(repeatWeekdays ?? []), n].sort();
+                      scheduleChange({ repeatWeekdays: next.length ? next : null, repeatEvery: null });
+                    }}
+                    className={`h-8 w-8 rounded-full border text-xs ${on ? "bg-primary text-primary-foreground" : ""}`}
+                  >
+                    {name[0]}
+                  </button>
+                );
+              })}
+            </div>
             <div className="flex flex-wrap items-center gap-2 text-sm">
-              Repeat every
+              {repeatWeekdays?.length ? "Or every" : "Or repeat every"}
               <input
                 key={repeatEvery ?? "none"}
                 type="number"
@@ -240,7 +271,7 @@ export function TaskCard({
                 aria-label="Repeat interval"
                 onBlur={(e) => {
                   const every = e.target.value === "" ? null : Number(e.target.value);
-                  if (every !== repeatEvery) scheduleChange({ repeatEvery: every, repeatUnit: repeatUnit ?? "week" });
+                  if (every !== repeatEvery) scheduleChange({ repeatEvery: every, repeatUnit: repeatUnit ?? "week", repeatWeekdays: null });
                 }}
                 className="h-9 w-16 rounded-md border bg-background px-2 text-base"
               />
@@ -254,7 +285,7 @@ export function TaskCard({
                 <option value="week">weeks</option>
                 <option value="month">months</option>
               </select>
-              {repeatEvery && (
+              {(repeatEvery || repeatWeekdays?.length) && (
                 <label className="flex items-center gap-2">
                   until
                   <input

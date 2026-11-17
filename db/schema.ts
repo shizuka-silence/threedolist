@@ -38,6 +38,7 @@ export const tasks = pgTable("tasks", {
   deadline: ts("deadline"),
   // Completing a repeating task spawns the next copy (see completeTask).
   repeatEvery: integer("repeat_every"),
+  repeatWeekdays: integer("repeat_weekdays").array(), // 0=Sun..6=Sat; takes priority over every/unit
   repeatUnit: text("repeat_unit", { enum: ["day", "week", "month"] }),
   repeatUntil: ts("repeat_until"),
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { DndContext, MouseSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { DndContext, MouseSensor, pointerWithin, TouchSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { GripVertical, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { scheduleTask, unscheduleTask } from "@/app/actions/tasks";
@@ -16,8 +16,8 @@ type CalendarTask = {
   scheduledStart: string | null; // ISO; rendered in the browser's timezone
 };
 
-const FIRST_HOUR = 6;
-const LAST_HOUR = 23; // timeline ends at 11 PM
+const FIRST_HOUR = 0;
+const LAST_HOUR = 24; // whole day; the last slot is 11:30 PM
 const PX_PER_HOUR = 64;
 const SLOTS = Array.from({ length: (LAST_HOUR - FIRST_HOUR) * 2 }, (_, i) => ({
   hour: FIRST_HOUR + Math.floor(i / 2),
@@ -34,8 +34,11 @@ export function DayCalendar() {
   const [day, setDay] = useState<string | null>(null); // set after mount so server and browser agree
   const [picking, setPicking] = useState<CalendarTask | null>(null);
 
-  // Mouse only, with a small threshold so button clicks still work; touch scrolls normally and uses the Schedule button.
-  const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 5 } }));
+  // Small mouse threshold so button clicks still work; touch needs a long-press so swipes still scroll.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
+  );
 
   useEffect(() => setDay(toDayStr(new Date())), []);
   if (!day) return <p className="text-muted-foreground">Loading…</p>;
@@ -145,12 +148,12 @@ function useDragProps(id: string) {
   };
 }
 
-const GripHint = () => <GripVertical className="hidden size-4 shrink-0 text-muted-foreground md:block" aria-hidden />;
+const GripHint = () => <GripVertical className="size-4 shrink-0 text-muted-foreground" aria-hidden />;
 
 function UnscheduledRow({ task, onPick }: { task: CalendarTask; onPick: () => void }) {
   const drag = useDragProps(task.id);
   return (
-    <li {...drag} className="flex items-center gap-2 rounded-lg border bg-background p-2 md:cursor-grab">
+    <li {...drag} className="flex select-none items-center gap-2 rounded-lg border bg-background p-2 md:cursor-grab [-webkit-touch-callout:none]">
       <GripHint />
       <div className="min-w-0 flex-1">
         <p className="truncate">{task.title}</p>
@@ -167,7 +170,7 @@ function Block({ task, top, onUnschedule }: { task: CalendarTask; top: number; o
     <div
       {...drag}
       style={{ ...drag.style, top, height: computeBlockHeightPx(task.estimatedMinutes, PX_PER_HOUR) }}
-      className="absolute left-16 right-0 flex items-start gap-1 overflow-hidden rounded-md border bg-primary/15 px-2 py-1 text-sm md:cursor-grab"
+      className="absolute left-16 right-0 flex items-start gap-1 select-none overflow-hidden rounded-md border bg-primary/15 px-2 py-1 text-sm md:cursor-grab [-webkit-touch-callout:none]"
     >
       <GripHint />
       <div className="min-w-0 flex-1">

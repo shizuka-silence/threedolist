@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { AddTaskForm } from "@/components/add-task-form";
 import { useDashboard } from "@/components/dashboard-provider";
 import { DraggableTask } from "@/components/draggable-task";
 import { ProjectDnd } from "@/components/project-dnd";
@@ -11,6 +13,7 @@ import { filterTasksByProject } from "@/lib/project-rules";
 // Folder counts and the visible list are derived from dashboard state, so they move together with any change.
 export function TaskBoard({ selectedParam, onSelectProject }: { selectedParam?: string; onSelectProject: (id: string) => void }) {
   const { state } = useDashboard();
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null); // last-touched card
   const selectedProject = state.projects.find((p) => p.id === selectedParam);
   // Unknown ids (deleted project, hand-edited URL) fall back to "all".
   const selected = selectedParam === "unassigned" || selectedProject ? selectedParam! : "all";
@@ -25,11 +28,15 @@ export function TaskBoard({ selectedParam, onSelectProject }: { selectedParam?: 
         unassignedCount={filterTasksByProject(state.tasks, "unassigned").length}
         projects={state.projects.map((p) => ({ ...p, taskCount: state.tasks.filter((t) => t.projectId === p.id).length }))}
       />
+      <AddTaskForm projectId={selectedProject?.id ?? null} />
       {selectedProject && <ProjectWorkspace projectId={selectedProject.id} name={selectedProject.name} color={selectedProject.color} />}
       <ul className="flex flex-col gap-3">
         {visible.map((task) => (
           <DraggableTask key={task.id} id={task.id}>
-            <TaskCard {...task} projects={state.projects} hideProject={!!selectedProject} />
+            <TaskCard
+              {...task} projects={state.projects} hideProject={!!selectedProject}
+              active={task.id === activeTaskId} onActivate={() => setActiveTaskId(task.id)}
+            />
           </DraggableTask>
         ))}
         {visible.length === 0 && <p className="text-muted-foreground">Nothing to do here. Add a task above.</p>}

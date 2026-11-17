@@ -2,7 +2,7 @@
 
 import { useDraggable } from "@dnd-kit/core";
 
-// Desktop-only drag handle; on mobile the task card's project picker does the same job.
+// Drag handle (mouse drag, or long-press on touch); the card's project picker is the no-drag fallback.
 export function DraggableTask({ id, children }: { id: string; children: React.ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
   return (
@@ -16,7 +16,7 @@ export function DraggableTask({ id, children }: { id: string; children: React.Re
         {...attributes}
         {...listeners}
         aria-label="Drag to a project folder"
-        className="absolute right-1 top-1 z-10 hidden h-8 w-8 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground hover:bg-muted md:flex"
+        className="absolute right-1 top-1 z-10 flex h-8 w-8 cursor-grab touch-none select-none items-center justify-center rounded-md text-muted-foreground hover:bg-muted [-webkit-touch-callout:none]"
       >
         ⠿
       </button>

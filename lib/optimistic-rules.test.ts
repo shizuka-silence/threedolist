@@ -146,6 +146,33 @@ describe("server-returned rows (upsert)", () => {
   });
 });
 
+describe("project order and logged minutes", () => {
+  const threeProjects = () =>
+    state({
+      projects: [
+        { id: "p1", name: "Taxes", color: "#111111" },
+        { id: "p2", name: "Gym", color: "#222222" },
+        { id: "p3", name: "Home", color: "#333333" },
+      ],
+    });
+
+  it("project/upsert on an existing id replaces it in place (rename keeps its slot)", () => {
+    const next = applyOptimisticChange(threeProjects(), { type: "project/upsert", project: { id: "p2", name: "Gym 2", color: "#999999" } });
+    expect(next.projects.map((p) => [p.id, p.name])).toEqual([["p1", "Taxes"], ["p2", "Gym 2"], ["p3", "Home"]]);
+  });
+
+  it("project/reorder orders projects by the given ids, unknown ids stay at the end", () => {
+    const next = applyOptimisticChange(threeProjects(), { type: "project/reorder", ids: ["p3", "p1"] });
+    expect(next.projects.map((p) => p.id)).toEqual(["p3", "p1", "p2"]);
+  });
+
+  it("task/addMinutes adds to actualMinutes without touching the timer", () => {
+    const base = state({ tasks: [task({ id: "t1", actualMinutes: 10, activeTimerStartedAt: "2026-01-01T10:00:00Z" })] });
+    const next = applyOptimisticChange(base, { type: "task/addMinutes", id: "t1", minutes: 20 });
+    expect(next.tasks[0]).toMatchObject({ actualMinutes: 30, activeTimerStartedAt: "2026-01-01T10:00:00Z" });
+  });
+});
+
 describe("completed this session (feeds the Receipts tab)", () => {
   it("complete moves the task into completedTasks, newest first, stamped with the given time", () => {
     const first = applyOptimisticChange(state(), { type: "task/complete", id: "t1", at: "2026-11-17T10:00:00.000Z" });

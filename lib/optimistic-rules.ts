@@ -25,6 +25,7 @@ export type OptimisticTask = {
   aiClarifyingQuestions: string[] | null;
   deadline: string | null; // ISO
   repeatEvery: number | null;
+  repeatWeekdays: number[] | null;
   repeatUnit: "day" | "week" | "month" | null;
   repeatUntil: string | null; // ISO
   proofCount: number;
@@ -32,7 +33,7 @@ export type OptimisticTask = {
   subtasks: OptimisticSubtask[];
 };
 
-export type TaskSchedule = Pick<OptimisticTask, "deadline" | "repeatEvery" | "repeatUnit" | "repeatUntil">;
+export type TaskSchedule = Pick<OptimisticTask, "deadline" | "repeatEvery" | "repeatWeekdays" | "repeatUnit" | "repeatUntil">;
 
 export type OptimisticProject = { id: string; name: string; color: string };
 export type OptimisticProjectFile = { id: string; projectId: string; fileName: string; href: string | null; isLink: boolean };
@@ -84,7 +85,7 @@ function upsertFirst<T extends { id: string }>(list: T[], row: T, replaces?: str
 export function buildOptimisticTask(id: string, title: string, completionType: "tick" | "proof"): OptimisticTask {
   return {
     id, title, completionType, projectId: null, estimatedMinutes: null, actualMinutes: 0, activeTimerStartedAt: null,
-    status: "todo", scheduledStart: null, aiClarifyingQuestions: null, deadline: null, repeatEvery: null, repeatUnit: null,
+    status: "todo", scheduledStart: null, aiClarifyingQuestions: null, deadline: null, repeatEvery: null, repeatWeekdays: null, repeatUnit: null,
     repeatUntil: null, proofCount: 0, thumbnails: [], subtasks: [],
   };
 }
