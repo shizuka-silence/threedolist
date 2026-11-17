@@ -166,6 +166,22 @@ export function TaskCard({
       r.nextTask ? [{ type: "task/upsert", task: r.nextTask }] : [],
     );
   const fieldClass = "h-9 rounded-md border bg-background px-2 text-base";
+  // For work done without the timer (offline, away from the phone).
+  const logForm = (
+    <form onSubmit={logTime} className="flex items-center gap-2 text-sm">
+      <input
+        value={logMinutes}
+        onChange={(e) => setLogMinutes(e.target.value)}
+        type="number"
+        inputMode="numeric"
+        min={1}
+        placeholder="min taken"
+        aria-label="Minutes taken"
+        className="h-9 w-24 rounded-md border bg-background px-2 text-base"
+      />
+      <Button type="submit" variant="outline" size="sm">Log</Button>
+    </form>
+  );
 
   return (
     <div
@@ -253,6 +269,7 @@ export function TaskCard({
               <option value="">No project</option>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <label className="flex items-center gap-2 text-sm">
               Deadline
               <input
@@ -284,6 +301,7 @@ export function TaskCard({
                   </button>
                 ))}
               </div>
+            </div>
             </div>
             {repeatMode === "weekdays" ? (
               <div className="flex flex-wrap items-center gap-1 text-sm">
@@ -388,26 +406,30 @@ export function TaskCard({
 
           {/* 3. AI Prep */}
           <div className="flex flex-col gap-2 border-t pt-3">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-              {([["estimate", "Time estimate"], ["questions", "Questions"], ["pitfalls", "Pitfalls"]] as const).map(([part, label]) => (
-                <label key={part} className="flex items-center gap-1">
-                  <input
-                    type="checkbox"
-                    checked={aiParts[part]}
-                    onChange={(e) => setAiParts({ ...aiParts, [part]: e.target.checked })}
-                  />
-                  {label}
-                </label>
-              ))}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                {/* Toggle chips (filled when on) instead of checkboxes; aria-pressed keeps them accessible. */}
+                {([["estimate", "Time estimate"], ["questions", "Questions"], ["pitfalls", "Pitfalls"]] as const).map(([part, label]) => (
+                  <button
+                    key={part}
+                    type="button"
+                    aria-pressed={aiParts[part]}
+                    onClick={() => setAiParts({ ...aiParts, [part]: !aiParts[part] })}
+                    className={`h-8 rounded-md border px-3 ${aiParts[part] ? "bg-primary text-primary-foreground" : ""}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={aiRunning || !(aiParts.estimate || aiParts.questions || aiParts.pitfalls)}
+                onClick={runAiPrep}
+              >
+                {aiRunning ? "AI is thinking…" : "AI Prep"}
+              </Button>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={aiRunning || !(aiParts.estimate || aiParts.questions || aiParts.pitfalls)}
-              onClick={runAiPrep}
-            >
-              {aiRunning ? "AI is thinking…" : "AI Prep"}
-            </Button>
             {aiClarifyingQuestions && aiClarifyingQuestions.length > 0 && (
               <ul className="list-disc pl-5 text-sm">
                 {aiClarifyingQuestions.map((q) => <li key={q}>{q}</li>)}
@@ -418,15 +440,20 @@ export function TaskCard({
           {/* 4. Timer */}
           <div className="flex flex-col gap-2 border-t pt-3">
             {!startedAt ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="lg"
-                className="w-full"
-                onClick={() => run({ type: "task/startTimer", id, at: new Date().toISOString() }, () => startTaskTimer(id))}
-              >
-                Start Timer
-              </Button>
+              // Log-by-hand on the left, "or", timer on the right: two separate ways to record time.
+              <div className="flex flex-wrap items-center gap-2">
+                {logForm}
+                <span className="text-sm text-muted-foreground">or</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  className="ml-auto"
+                  onClick={() => run({ type: "task/startTimer", id, at: new Date().toISOString() }, () => startTaskTimer(id))}
+                >
+                  Start Timer
+                </Button>
+              </div>
             ) : !stopping ? (
               <div className="flex items-center justify-between gap-2">
                 <span className="font-mono text-lg" aria-live="off">{clock}</span>
@@ -474,21 +501,7 @@ export function TaskCard({
                 </div>
               </div>
             )}
-            {/* For work done without the timer (offline, away from the phone). */}
-            <form onSubmit={logTime} className="flex items-center gap-2 text-sm">
-              Or log time taken
-              <input
-                value={logMinutes}
-                onChange={(e) => setLogMinutes(e.target.value)}
-                type="number"
-                inputMode="numeric"
-                min={1}
-                placeholder="min"
-                aria-label="Minutes taken"
-                className="h-9 w-20 rounded-md border bg-background px-2 text-base"
-              />
-              <Button type="submit" variant="outline" size="sm">Log</Button>
-            </form>
+            {startedAt && <div className="flex items-center gap-2"><span className="text-sm text-muted-foreground">or</span>{logForm}</div>}
           </div>
 
           {/* 5. Photo proof */}

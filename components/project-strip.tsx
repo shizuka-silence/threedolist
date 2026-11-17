@@ -1,6 +1,6 @@
 "use client";
 
-import { useDraggable, useDroppable } from "@dnd-kit/core";
+import { useDndContext, useDraggable, useDroppable } from "@dnd-kit/core";
 import { useState } from "react";
 import { createProject } from "@/app/actions/projects";
 import { useDashboard } from "@/components/dashboard-provider";
@@ -15,19 +15,24 @@ type Props = {
   projects: { id: string; name: string; color: string; taskCount: number }[];
 };
 
-function Folder({ dropId, dragId, onSelect, selected, label, count, color }: {
+function Folder({ dropId, dragId, onSelect, selected, label, count, color, index, draggedIndex }: {
   dropId?: string; dragId?: string; // dragId set = this folder can be dragged to reorder the strip
   onSelect: () => void; selected: boolean; label: string; count: number; color?: string;
+  index?: number; draggedIndex?: number; // draggedIndex is set only while a folder (not a task) is being dragged
 }) {
   const { setNodeRef: setDropRef, isOver } = useDroppable({ id: dropId ?? "none", disabled: !dropId });
   const drag = useDraggable({ id: dragId ?? "none", disabled: !dragId });
+  const reordering = draggedIndex !== undefined && index !== undefined;
+  // The dragged folder lands on this one's spot: after it when coming from the left, before it when coming from the right.
+  const lineSide = isOver && reordering && draggedIndex !== index ? (draggedIndex < index ? "-right-[5px]" : "-left-[5px]") : null;
   return (
     <div
       ref={(node) => { setDropRef(node); drag.setNodeRef(node); }}
       {...drag.listeners}
       style={{ transform: drag.transform ? `translate(${drag.transform.x}px, ${drag.transform.y}px)` : undefined, zIndex: drag.isDragging ? 20 : undefined }}
-      className={`shrink-0 rounded-md [-webkit-touch-callout:none] ${isOver ? "ring-2 ring-primary" : ""} ${drag.isDragging ? "opacity-80 shadow-lg" : ""}`}
+      className={`relative shrink-0 rounded-md [-webkit-touch-callout:none] ${isOver && !reordering ? "ring-2 ring-primary" : ""} ${drag.isDragging ? "opacity-80 shadow-lg" : ""}`}
     >
+      {lineSide && <span className={`pointer-events-none absolute inset-y-0 w-[3px] rounded-full bg-primary ${lineSide}`} />}
       <button
         type="button"
         onClick={onSelect}
@@ -43,6 +48,8 @@ function Folder({ dropId, dragId, onSelect, selected, label, count, color }: {
 export function ProjectStrip({ selected, onSelect, allCount, unassignedCount, projects }: Props) {
   const [name, setName] = useState("");
   const { run } = useDashboard();
+  const activeId = useDndContext().active?.id;
+  const draggedIndex = projects.findIndex((p) => `folder:${p.id}` === activeId); // -1 when nothing, or a task, is dragged
 
   function add(event: React.FormEvent) {
     event.preventDefault();
@@ -71,10 +78,10 @@ export function ProjectStrip({ selected, onSelect, allCount, unassignedCount, pr
           dropId="project:none" onSelect={() => onSelect("unassigned")} selected={selected === "unassigned"}
           label="Unassigned" count={unassignedCount}
         />
-        {projects.map((p) => (
+        {projects.map((p, i) => (
           <Folder
             key={p.id} dropId={`project:${p.id}`} dragId={`folder:${p.id}`} onSelect={() => onSelect(p.id)} selected={selected === p.id}
-            label={p.name} count={p.taskCount} color={p.color}
+            label={p.name} count={p.taskCount} color={p.color} index={i} draggedIndex={draggedIndex >= 0 ? draggedIndex : undefined}
           />
         ))}
         {/* Trailing chip so "new project" sits right next to the folders it adds to. */}
