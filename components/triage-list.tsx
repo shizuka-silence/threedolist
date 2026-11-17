@@ -1,11 +1,9 @@
 "use client";
 
-import { useOptimistic, useState, useTransition } from "react";
 import { updateTriageItemCategory } from "@/app/actions/triage";
+import { useDashboard } from "@/components/dashboard-provider";
 import { TriageCard } from "@/components/triage-card";
 import type { TriageCategory } from "@/lib/triage-rules";
-
-type Item = { id: string; category: TriageCategory; sourceSubject: string; summary: string | null; suggestedAction: string | null };
 
 const SECTIONS: { category: TriageCategory; heading: string }[] = [
   { category: "requirement", heading: "Requirements & Deadlines" },
@@ -15,26 +13,18 @@ const SECTIONS: { category: TriageCategory; heading: string }[] = [
 ];
 
 // Owns the grouping so a reclassified card jumps to its new section instantly (reverts if the save fails).
-export function TriageList({ items }: { items: Item[] }) {
-  const [optimisticItems, setCategory] = useOptimistic(items, (state, change: { id: string; category: TriageCategory }) =>
-    state.map((item) => (item.id === change.id ? { ...item, category: change.category } : item)),
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
+export function TriageList() {
+  const { state, run } = useDashboard();
 
   function reclassify(id: string, category: TriageCategory) {
-    startTransition(async () => {
-      setCategory({ id, category });
-      const result = await updateTriageItemCategory(id, category);
-      setError(result.error ?? null);
-    });
+    run({ type: "triage/reclassify", id, category }, () => updateTriageItemCategory(id, category));
   }
 
   return (
     <>
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      {state.triage.length === 0 && <p className="text-muted-foreground">Triage is empty. Dump a thought above.</p>}
       {SECTIONS.map(({ category, heading }) => {
-        const sectionItems = optimisticItems.filter((item) => item.category === category);
+        const sectionItems = state.triage.filter((item) => item.category === category);
         if (sectionItems.length === 0) return null;
         return (
           <section key={category} className="flex flex-col gap-2">
@@ -47,4 +37,9 @@ export function TriageList({ items }: { items: Item[] }) {
       })}
     </>
   );
+}
+
+export function TriageBadge() {
+  const { state } = useDashboard();
+  return <>{state.triage.length > 0 && ` (${state.triage.length})`}</>;
 }

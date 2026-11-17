@@ -7,19 +7,17 @@ import { signOut } from "@/app/login/actions";
 import { AddTaskForm } from "@/components/add-task-form";
 import { BrainDumpBar } from "@/components/brain-dump-bar";
 import { DayCalendar } from "@/components/day-calendar";
-import { DraggableTask } from "@/components/draggable-task";
+import { DashboardProvider } from "@/components/dashboard-provider";
 import { ReceiptLog } from "@/components/receipt-log";
-import { ProjectDnd } from "@/components/project-dnd";
-import { ProjectStrip } from "@/components/project-strip";
 import { ProjectWorkspace } from "@/components/project-workspace";
-import { TaskCard } from "@/components/task-card";
+import { TaskBoard } from "@/components/task-board";
 import { EmailDumpBox } from "@/components/email-dump-box";
-import { TriageList } from "@/components/triage-list";
+import { TriageBadge, TriageList } from "@/components/triage-list";
 import { Button } from "@/components/ui/button";
 import { db } from "@/db";
 import { projectFiles, projects, taskProofs, taskSubtasks, tasks, triageItems } from "@/db/schema";
 import { loadReceipts } from "@/app/receipts";
-import { filterTasksByProject, isProjectLink } from "@/lib/project-rules";
+import { isProjectLink } from "@/lib/project-rules";
 import { createClient } from "@/lib/supabase/server";
 
 export default function Home({ searchParams }: { searchParams: Promise<{ tab?: string; project?: string }> }) {
@@ -67,9 +65,10 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
     .from(taskProofs)
     .innerJoin(tasks, eq(tasks.id, taskProofs.taskId))
     .where(and(eq(tasks.userId, user.id), eq(taskProofs.type, "image")));
-  const { data: signed } = await supabase.storage
-    .from("proof-uploads")
-    .createSignedUrls(imageProofs.map((p) => p.path), 3600);
+  // One batched call, skipped entirely when there is nothing to sign.
+  const { data: signed } = imageProofs.length
+    ? await supabase.storage.from("proof-uploads").createSignedUrls(imageProofs.map((p) => p.path), 3600)
+    : { data: null };
   const thumbnailsByTask = new Map<string, { id: string; url: string }[]>();
   imageProofs.forEach((p, i) => {
     const url = signed?.[i]?.signedUrl;
@@ -113,9 +112,16 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
   // Unknown ids (deleted project, hand-edited URL) fall back to "all".
   const selected =
     projectParam === "unassigned" || projectRows.some((p) => p.id === projectParam) ? projectParam! : "all";
-  const visible = filterTasksByProject(active, selected);
   const selectedProject = projectRows.find((p) => p.id === selected);
-  const stripProjects = projectRows.map((p) => ({ ...p, taskCount: active.filter((t) => t.projectId === p.id).length }));
+
+  const optimisticTasks = active.map((t) => ({
+    ...t,
+    status: t.status,
+    activeTimerStartedAt: t.activeTimerStartedAt?.toISOString() ?? null,
+    scheduledStart: t.scheduledStart?.toISOString() ?? null,
+    thumbnails: thumbnailsByTask.get(t.id) ?? [],
+    subtasks: subtaskRows.filter((s) => s.taskId === t.id),
+  }));
 
   let workspaceFiles: { id: string; fileName: string; href: string | null; isLink: boolean }[] = [];
   if (selectedProject) {
@@ -125,7 +131,9 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
       .where(eq(projectFiles.projectId, selectedProject.id))
       .orderBy(projectFiles.createdAt);
     const storagePaths = files.filter((f) => !isProjectLink(f.fileUrl)).map((f) => f.fileUrl);
-    const { data: signedFiles } = await supabase.storage.from("proof-uploads").createSignedUrls(storagePaths, 3600);
+    const { data: signedFiles } = storagePaths.length
+      ? await supabase.storage.from("proof-uploads").createSignedUrls(storagePaths, 3600)
+      : { data: null };
     workspaceFiles = files.map((f) => {
       const link = isProjectLink(f.fileUrl);
       const href = link ? f.fileUrl : signedFiles?.find((s) => s.path === f.fileUrl)?.signedUrl ?? null;
@@ -134,6 +142,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
   }
 
   return (
+    <DashboardProvider triage={pendingTriage} tasks={optimisticTasks}>
     <main className="mx-auto flex w-full max-w-xl flex-col gap-6 p-4">
       <header className="flex items-center justify-between gap-2">
         <div className="min-w-0">
@@ -150,64 +159,38 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
         <Link href="/?tab=calendar" className={tabClass(showCalendar)}>Calendar</Link>
         <Link href="/?tab=receipts" className={tabClass(showReceipts)}>Receipts</Link>
         <Link href="/?tab=triage" className={tabClass(showTriage)}>
-          Triage{pendingTriage.length > 0 && ` (${pendingTriage.length})`}
+          Triage<TriageBadge />
         </Link>
       </nav>
 
       {showCalendar ? (
-        <DayCalendar
-          tasks={active.map((t) => ({
-            id: t.id,
-            title: t.title,
-            estimatedMinutes: t.estimatedMinutes,
-            actualMinutes: t.actualMinutes,
-            scheduledStart: t.scheduledStart?.toISOString() ?? null,
-          }))}
-        />
+        <DayCalendar />
       ) : showReceipts ? (
         <ReceiptLog receipts={receipts} projects={projectRows} />
       ) : showTriage ? (
         <>
           <EmailDumpBox canSyncGmail={Boolean(process.env.GMAIL_SYNC_WEBHOOK_URL)} />
           <BrainDumpBar />
-          {pendingTriage.length === 0 && <p className="text-muted-foreground">Triage is empty. Dump a thought above.</p>}
-          <TriageList items={pendingTriage} />
+          <TriageList />
         </>
       ) : (
         <>
       <AddTaskForm />
 
-      <ProjectDnd>
-        <ProjectStrip
-          selected={selected}
-          allCount={active.length}
-          unassignedCount={filterTasksByProject(active, "unassigned").length}
-          projects={stripProjects}
-        />
-
-        {selectedProject && (
-          <ProjectWorkspace projectId={selectedProject.id} name={selectedProject.name} files={workspaceFiles} />
-        )}
-
-        <ul className="flex flex-col gap-3">
-          {visible.map((task) => (
-            <DraggableTask key={task.id} id={task.id}>
-              <TaskCard
-                {...task}
-                activeTimerStartedAt={task.activeTimerStartedAt?.toISOString() ?? null}
-                thumbnails={thumbnailsByTask.get(task.id) ?? []}
-                subtasks={subtaskRows.filter((s) => s.taskId === task.id)}
-                projects={projectRows}
-              />
-            </DraggableTask>
-          ))}
-          {visible.length === 0 && <p className="text-muted-foreground">Nothing to do here. Add a task above.</p>}
-        </ul>
-      </ProjectDnd>
+      <TaskBoard
+        selected={selected}
+        projects={projectRows}
+        workspace={
+          selectedProject && (
+            <ProjectWorkspace projectId={selectedProject.id} name={selectedProject.name} files={workspaceFiles} />
+          )
+        }
+      />
 
         </>
       )}
     </main>
+    </DashboardProvider>
   );
 }
 

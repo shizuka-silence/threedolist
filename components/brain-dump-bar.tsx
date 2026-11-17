@@ -1,20 +1,27 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { dumpToTriage } from "@/app/actions/triage";
+import { useDashboard } from "@/components/dashboard-provider";
 
 export function BrainDumpBar() {
   const [text, setText] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const { run } = useDashboard();
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
-    startTransition(async () => {
-      const result = await dumpToTriage({ sourceSubject: text });
-      setError(result.error ?? null);
-      if (!result.error) setText("");
-    });
+    const sourceSubject = text.trim();
+    if (!sourceSubject) return;
+    setText(""); // ready for the next thought immediately
+    run(
+      // "requirement" mirrors the DB default for new items
+      { type: "triage/add", item: { id: crypto.randomUUID(), category: "requirement", sourceSubject, summary: null, suggestedAction: null } },
+      async () => {
+        const result = await dumpToTriage({ sourceSubject });
+        if (result.error) setText((current) => current || sourceSubject); // don't lose the thought on failure
+        return result;
+      },
+    );
   }
 
   return (
@@ -22,13 +29,11 @@ export function BrainDumpBar() {
       <input
         value={text}
         onChange={(e) => setText(e.target.value)}
-        disabled={pending}
         autoFocus
         placeholder="Brain dump… hit Enter"
         aria-label="Brain dump"
         className="h-12 w-full rounded-md border bg-background px-3 text-base"
       />
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </form>
   );
 }

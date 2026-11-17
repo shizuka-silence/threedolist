@@ -49,7 +49,9 @@ export async function loadReceipts(supabase: Awaited<ReturnType<typeof createCli
     .orderBy(taskProofs.createdAt);
 
   const stored = proofRows.filter((p) => p.type === "image" || p.type === "file");
-  const { data: signed } = await supabase.storage.from("proof-uploads").createSignedUrls(stored.map((p) => p.value), 3600);
+  const { data: signed } = stored.length
+    ? await supabase.storage.from("proof-uploads").createSignedUrls(stored.map((p) => p.value), 3600)
+    : { data: null };
   const hrefById = new Map(stored.map((p, i) => [p.id, signed?.[i]?.signedUrl ?? null]));
 
   return rows.map((t) => ({

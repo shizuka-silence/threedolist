@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { dismissTriageItem, promoteTriageItem } from "@/app/actions/triage";
+import { useDashboard } from "@/components/dashboard-provider";
 import { Button } from "@/components/ui/button";
+import { buildOptimisticTask } from "@/lib/optimistic-rules";
 import { buildPromotionTaskPayload, TRIAGE_CATEGORIES, type TriageCategory } from "@/lib/triage-rules";
 
 type Props = {
@@ -40,15 +42,15 @@ export function TriageCard({ id, category, sourceSubject, summary, suggestedActi
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(defaults.title);
   const [completionType, setCompletionType] = useState(defaults.completionType);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const { run } = useDashboard();
 
-  function run(action: () => Promise<{ error?: string }>) {
-    startTransition(async () => {
-      const result = await action();
-      setError(result.error ?? null);
-    });
+  // The card disappears at once; a failure restores it and the dashboard banner explains why.
+  function promote(overrides?: { title: string; completionType: "tick" | "proof" }) {
+    const task = buildOptimisticTask(crypto.randomUUID(), overrides?.title.trim() || defaults.title, overrides?.completionType ?? defaults.completionType);
+    run({ type: "triage/promote", id, task }, () => promoteTriageItem(id, overrides));
   }
+
+  const dismiss = () => run({ type: "triage/remove", id }, () => dismissTriageItem(id));
 
   const promoteLabel = PROMOTE_LABEL[category];
 
@@ -64,7 +66,7 @@ export function TriageCard({ id, category, sourceSubject, summary, suggestedActi
             key={c}
             type="button"
             aria-pressed={c === category}
-            disabled={pending || c === category}
+            disabled={c === category}
             onClick={() => onReclassify(id, c)}
             className={`rounded-full border px-2 py-1 text-xs ${c === category ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
           >
@@ -77,7 +79,7 @@ export function TriageCard({ id, category, sourceSubject, summary, suggestedActi
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            run(() => promoteTriageItem(id, { title, completionType }));
+            promote({ title, completionType });
           }}
           className="flex flex-col gap-2"
         >
@@ -94,27 +96,26 @@ export function TriageCard({ id, category, sourceSubject, summary, suggestedActi
             <Button type="button" variant={completionType === "proof" ? "default" : "outline"} aria-pressed={completionType === "proof"} onClick={() => setCompletionType("proof")} className="h-10 flex-1">
               Proof
             </Button>
-            <Button type="submit" disabled={pending} className="h-10 flex-1">Add task</Button>
+            <Button type="submit" className="h-10 flex-1">Add task</Button>
           </div>
         </form>
       ) : (
         <div className="flex gap-2">
           {promoteLabel && (
-            <Button onClick={() => run(() => promoteTriageItem(id))} disabled={pending} className="h-10 flex-1">
+            <Button onClick={() => promote()} className="h-10 flex-1">
               {promoteLabel}
             </Button>
           )}
-          <Button variant="outline" onClick={() => run(() => dismissTriageItem(id))} disabled={pending} className="h-10 flex-1">
+          <Button variant="outline" onClick={dismiss} className="h-10 flex-1">
             {DISMISS_LABEL[category]}
           </Button>
           {promoteLabel && (
-            <Button variant="outline" onClick={() => setEditing(true)} disabled={pending} className="h-10">
+            <Button variant="outline" onClick={() => setEditing(true)} className="h-10">
               Edit
             </Button>
           )}
         </div>
       )}
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </li>
   );
 }

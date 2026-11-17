@@ -7,6 +7,7 @@ import {
   updateTaskEstimate,
 } from "@/app/actions/tasks";
 import { assignTaskToProject } from "@/app/actions/projects";
+import { useDashboard } from "@/components/dashboard-provider";
 import { Button } from "@/components/ui/button";
 import { calculateLoggedMinutes } from "@/lib/task-rules";
 
@@ -34,7 +35,11 @@ export function TaskCard({
   const [subtaskLabel, setSubtaskLabel] = useState("");
   const [aiParts, setAiParts] = useState({ estimate: false, questions: false, pitfalls: false });
   const [error, setError] = useState<string | null>(null);
+  // Slow-by-nature actions keep real pending states; instant ones go through the dashboard's optimistic run().
   const [pending, startTransition] = useTransition();
+  const [uploading, startUpload] = useTransition();
+  const [aiRunning, startAi] = useTransition();
+  const { run: runOptimistic } = useDashboard();
   const [now, setNow] = useState<number | null>(null); // null until mounted, avoids a hydration mismatch
   const [stopping, setStopping] = useState(false);
   const [trim, setTrim] = useState(0);
@@ -74,8 +79,8 @@ export function TaskCard({
     return () => window.removeEventListener("paste", onPaste);
   });
 
-  function run(action: () => Promise<{ error?: string }>, onSuccess?: () => void) {
-    startTransition(async () => {
+  function run(action: () => Promise<{ error?: string }>, onSuccess?: () => void, start = startTransition) {
+    start(async () => {
       const result = await action();
       setError(result.error ?? null);
       if (!result.error) onSuccess?.();
@@ -90,7 +95,7 @@ export function TaskCard({
       formData.set("type", "image");
       formData.set("file", compressed, file.name);
       return addTaskProof(formData);
-    });
+    }, undefined, startUpload);
   }
 
   function addNote(event: React.FormEvent) {
@@ -104,7 +109,17 @@ export function TaskCard({
 
   function addSubtaskSubmit(event: React.FormEvent) {
     event.preventDefault();
-    run(() => addSubtask(id, subtaskLabel), () => setSubtaskLabel(""));
+    const label = subtaskLabel.trim();
+    if (!label) return;
+    setSubtaskLabel("");
+    runOptimistic(
+      { type: "task/addSubtask", taskId: id, subtask: { id: crypto.randomUUID(), label, isCompleted: false, source: "user" } },
+      async () => {
+        const result = await addSubtask(id, label);
+        if (result.error) setSubtaskLabel((current) => current || label);
+        return result;
+      },
+    );
   }
 
   return (
@@ -135,8 +150,9 @@ export function TaskCard({
               aria-label="Estimated minutes"
               onBlur={(e) => {
                 const value = e.target.value === "" ? null : Number(e.target.value);
-                if (value !== estimatedMinutes) run(() => updateTaskEstimate(id, value));
+                if (value !== estimatedMinutes) runOptimistic({ type: "task/setEstimate", id, minutes: value }, () => updateTaskEstimate(id, value));
               }}
+              onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
               className="h-8 w-16 rounded-md border bg-background px-2 text-base"
             />
             m
@@ -152,9 +168,11 @@ export function TaskCard({
 
       <select
         value={projectId ?? ""}
-        disabled={pending}
         aria-label="Project folder"
-        onChange={(e) => run(() => assignTaskToProject(id, e.target.value || null))}
+        onChange={(e) => {
+          const next = e.target.value || null;
+          runOptimistic({ type: "task/assign", id, projectId: next }, () => assignTaskToProject(id, next));
+        }}
         className="h-9 rounded-md border bg-background px-2 text-base"
       >
         <option value="">No project</option>
@@ -228,8 +246,8 @@ export function TaskCard({
               e.target.value = "";
             }}
           />
-          <Button type="button" variant="outline" size="lg" disabled={pending} onClick={() => fileInput.current?.click()}>
-            Add photo (or Ctrl+V)
+          <Button type="button" variant="outline" size="lg" disabled={uploading} onClick={() => fileInput.current?.click()}>
+            {uploading ? "Uploading photo…" : "Add photo (or Ctrl+V)"}
           </Button>
           <form onSubmit={addNote} className="flex gap-2">
             <input
@@ -260,10 +278,10 @@ export function TaskCard({
         <Button
           type="button"
           variant="outline"
-          disabled={pending || !(aiParts.estimate || aiParts.questions || aiParts.pitfalls)}
-          onClick={() => run(() => runAiTaskPrep(id, aiParts), () => setAiParts({ estimate: false, questions: false, pitfalls: false }))}
+          disabled={aiRunning || !(aiParts.estimate || aiParts.questions || aiParts.pitfalls)}
+          onClick={() => run(() => runAiTaskPrep(id, aiParts), () => setAiParts({ estimate: false, questions: false, pitfalls: false }), startAi)}
         >
-          {pending ? "Working…" : "AI Prep"}
+          {aiRunning ? "AI is thinking…" : "AI Prep"}
         </Button>
         {aiClarifyingQuestions && aiClarifyingQuestions.length > 0 && (
           <ul className="list-disc pl-5 text-sm">
@@ -275,7 +293,7 @@ export function TaskCard({
             {subtasks.map((s) => (
               <li key={s.id}>
                 <label className={`flex items-center gap-2 text-sm ${s.source === "ai_pitfall" ? "italic text-muted-foreground" : ""}`}>
-                  <input type="checkbox" checked={s.isCompleted} disabled={pending} onChange={() => run(() => toggleSubtask(s.id))} />
+                  <input type="checkbox" checked={s.isCompleted} onChange={() => runOptimistic({ type: "task/toggleSubtask", taskId: id, subtaskId: s.id }, () => toggleSubtask(s.id))} />
                   {s.source === "ai_pitfall" && <span aria-label="AI pitfall">⚠</span>}
                   {s.label}
                 </label>
@@ -291,7 +309,7 @@ export function TaskCard({
             aria-label="Add subtask"
             className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-base"
           />
-          <Button type="submit" variant="outline" disabled={pending}>Add</Button>
+          <Button type="submit" variant="outline">Add</Button>
         </form>
       </div>
 
@@ -299,8 +317,9 @@ export function TaskCard({
 
       <Button
         size="lg"
-        disabled={pending || (isProof && proofCount === 0)}
-        onClick={() => run(() => completeTask(id))}
+        disabled={isProof && (pending || proofCount === 0)}
+        // Tick tasks leave the list instantly; proof tasks wait for the server so a failed completion is never shown as done.
+        onClick={() => (isProof ? run(() => completeTask(id)) : runOptimistic({ type: "task/complete", id }, () => completeTask(id)))}
       >
         {isProof ? "Mark Complete" : "Done"}
       </Button>

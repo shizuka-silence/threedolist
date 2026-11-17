@@ -2,8 +2,9 @@
 
 import { DndContext, MouseSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { GripVertical, X } from "lucide-react";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import { scheduleTask, unscheduleTask } from "@/app/actions/tasks";
+import { useDashboard } from "@/components/dashboard-provider";
 import { Button } from "@/components/ui/button";
 import { buildSlotTimestamp, computeBlockHeightPx, formatVarianceBadge } from "@/lib/calendar-rules";
 
@@ -27,11 +28,11 @@ const slotId = (hour: number, minute: number) => `${hour}:${minute}`;
 const toDayStr = (d: Date) => d.toLocaleDateString("en-CA"); // YYYY-MM-DD in local time
 const timeLabel = (h: number, m: number) => new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
-export function DayCalendar({ tasks }: { tasks: CalendarTask[] }) {
+export function DayCalendar() {
+  const { state, run } = useDashboard();
+  const tasks: CalendarTask[] = state.tasks;
   const [day, setDay] = useState<string | null>(null); // set after mount so server and browser agree
   const [picking, setPicking] = useState<CalendarTask | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
 
   // Mouse only, with a small threshold so button clicks still work; touch scrolls normally and uses the Schedule button.
   const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 5 } }));
@@ -39,12 +40,9 @@ export function DayCalendar({ tasks }: { tasks: CalendarTask[] }) {
   useEffect(() => setDay(toDayStr(new Date())), []);
   if (!day) return <p className="text-muted-foreground">Loading…</p>;
 
-  function run(action: () => Promise<{ error?: string }>) {
-    startTransition(async () => setError((await action()).error ?? null));
-  }
-
   function schedule(taskId: string, hour: number, minute: number) {
-    run(() => scheduleTask(taskId, buildSlotTimestamp(day!, hour, minute)));
+    const start = buildSlotTimestamp(day!, hour, minute);
+    run({ type: "task/schedule", id: taskId, start: start.toISOString() }, () => scheduleTask(taskId, start));
   }
 
   function onDragEnd({ active, over }: DragEndEvent) {
@@ -82,8 +80,6 @@ export function DayCalendar({ tasks }: { tasks: CalendarTask[] }) {
           {noEstimate > 0 && <p className="mt-2 text-sm text-muted-foreground">{noEstimate} task(s) need an estimate before they can be scheduled.</p>}
         </div>
 
-        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-
         <div className="relative" style={{ height: SLOTS.length * (PX_PER_HOUR / 2) }}>
           {SLOTS.map(({ hour, minute }) => <Slot key={slotId(hour, minute)} hour={hour} minute={minute} />)}
           {todays.map((t) => {
@@ -94,8 +90,7 @@ export function DayCalendar({ tasks }: { tasks: CalendarTask[] }) {
                 key={t.id}
                 task={t}
                 top={(minutesFromTop / 60) * PX_PER_HOUR}
-                disabled={pending}
-                onUnschedule={() => run(() => unscheduleTask(t.id))}
+                onUnschedule={() => run({ type: "task/unschedule", id: t.id }, () => unscheduleTask(t.id))}
               />
             );
           })}
@@ -166,7 +161,7 @@ function UnscheduledRow({ task, onPick }: { task: CalendarTask; onPick: () => vo
   );
 }
 
-function Block({ task, top, disabled, onUnschedule }: { task: CalendarTask; top: number; disabled: boolean; onUnschedule: () => void }) {
+function Block({ task, top, onUnschedule }: { task: CalendarTask; top: number; onUnschedule: () => void }) {
   const drag = useDragProps(task.id);
   return (
     <div
@@ -179,7 +174,7 @@ function Block({ task, top, disabled, onUnschedule }: { task: CalendarTask; top:
         <p className="truncate leading-tight">{task.title}</p>
         <p className="truncate text-xs text-muted-foreground">{formatVarianceBadge(task.estimatedMinutes, task.actualMinutes)}</p>
       </div>
-      <button onClick={onUnschedule} disabled={disabled} aria-label={`Unschedule ${task.title}`} className="flex size-8 shrink-0 items-center justify-center rounded-md">
+      <button onClick={onUnschedule} aria-label={`Unschedule ${task.title}`} className="flex size-8 shrink-0 items-center justify-center rounded-md">
         <X className="size-4" />
       </button>
     </div>
