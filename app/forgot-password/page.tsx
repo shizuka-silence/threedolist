@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { Button } from "@/components/ui/button";
 import { requestPasswordReset } from "@/app/login/actions";
+import { SendButton } from "./send-button";
 
 type SearchParams = Promise<{ error?: string; message?: string }>;
 
@@ -10,7 +10,8 @@ async function Feedback({ searchParams }: { searchParams: SearchParams }) {
   return (
     <>
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-      {message && <p role="status" className="text-sm text-muted-foreground">{message}</p>}
+      {message && <p role="status" className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300">{message} Check your inbox (and spam).</p>}
+      <SendButton sent={!!message} />
     </>
   );
 }
@@ -28,10 +29,9 @@ export default function ForgotPasswordPage({ searchParams }: { searchParams: Sea
           required
           className="h-12 rounded-md border bg-background px-3 text-base"
         />
-        <Suspense>
+        <Suspense fallback={<SendButton sent={false} />}>
           <Feedback searchParams={searchParams} />
         </Suspense>
-        <Button type="submit" size="lg">Email me a reset link</Button>
         <Link href="/login" className="text-center text-sm text-muted-foreground underline underline-offset-2">Back to sign in</Link>
       </form>
     </main>
