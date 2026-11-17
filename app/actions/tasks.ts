@@ -4,7 +4,7 @@ import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { taskProofs, taskSubtasks, tasks, timeLogs } from "@/db/schema";
 import { generateTaskPrep } from "@/lib/ai";
-import { toClientTask } from "@/lib/dashboard-rows";
+import { isUuid, toClientTask } from "@/lib/dashboard-rows";
 import type { OptimisticSubtask, OptimisticTask } from "@/lib/optimistic-rules";
 import {
   assertCanComplete, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate, type AiPrepParts,
@@ -20,7 +20,8 @@ const PROOF_BUCKET = "proof-uploads";
 
 async function requireUser() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data } = await supabase.auth.getClaims(); // verifies the JWT locally (no Auth server round trip) when the project uses asymmetric signing keys
+  const user = data?.claims ? { id: data.claims.sub, email: data.claims.email } : null;
   return { supabase, user };
 }
 
@@ -30,6 +31,7 @@ async function findOwnedTask(userId: string, taskId: string) {
 }
 
 export async function createTask(input: {
+  id?: string; // client-chosen so the card can appear before this returns
   title: string;
   completionType: "tick" | "proof";
   estimatedMinutes?: number;
@@ -41,6 +43,7 @@ export async function createTask(input: {
   const title = input.title.trim();
   if (!title) return { error: "Give the task a title." };
   if (input.completionType !== "tick" && input.completionType !== "proof") return { error: "Invalid task type." };
+  if (input.id && !isUuid(input.id)) return { error: "Invalid id." };
   const minutes = input.estimatedMinutes;
   if (minutes !== undefined && (!Number.isInteger(minutes) || minutes <= 0)) {
     return { error: "Estimated minutes must be a whole number above 0." };
@@ -49,6 +52,7 @@ export async function createTask(input: {
   const [row] = await db
     .insert(tasks)
     .values({
+      id: input.id,
       userId: user.id,
       title,
       completionType: input.completionType,
@@ -265,16 +269,17 @@ export async function runAiTaskPrep(taskId: string, parts: AiPrepParts): Promise
   };
 }
 
-export async function addSubtask(taskId: string, label: string): Promise<Result & { subtask?: OptimisticSubtask }> {
+export async function addSubtask(taskId: string, label: string, id?: string): Promise<Result & { subtask?: OptimisticSubtask }> {
   const { user } = await requireUser();
   if (!user) return { error: "Not signed in." };
   const trimmed = label.trim();
   if (!trimmed) return { error: "Type a subtask first." };
+  if (id && !isUuid(id)) return { error: "Invalid id." };
   if (!(await findOwnedTask(user.id, taskId))) return { error: "Task not found." };
 
   const [subtask] = await db
     .insert(taskSubtasks)
-    .values({ taskId, label: trimmed, source: "user" })
+    .values({ id, taskId, label: trimmed, source: "user" })
     .returning({ id: taskSubtasks.id, label: taskSubtasks.label, isCompleted: taskSubtasks.isCompleted, source: taskSubtasks.source });
   return { subtask };
 }

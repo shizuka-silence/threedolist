@@ -49,8 +49,7 @@ export function TriageCard({ id, category, sourceSubject, summary, suggestedActi
     const task = buildOptimisticTask(crypto.randomUUID(), overrides?.title.trim() || defaults.title, overrides?.completionType ?? defaults.completionType);
     run(
       { type: "triage/promote", id, task },
-      () => promoteTriageItem(id, overrides),
-      (result) => (result.task ? [{ type: "task/upsert", task: result.task, replaces: task.id }] : []),
+      () => promoteTriageItem(id, { ...overrides, taskId: task.id }),
     );
   }
 

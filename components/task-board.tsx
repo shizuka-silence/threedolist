@@ -9,7 +9,7 @@ import { TaskCard } from "@/components/task-card";
 import { filterTasksByProject } from "@/lib/project-rules";
 
 // Folder counts and the visible list are derived from dashboard state, so they move together with any change.
-export function TaskBoard({ selectedParam }: { selectedParam?: string }) {
+export function TaskBoard({ selectedParam, onSelectProject }: { selectedParam?: string; onSelectProject: (id: string) => void }) {
   const { state } = useDashboard();
   const selectedProject = state.projects.find((p) => p.id === selectedParam);
   // Unknown ids (deleted project, hand-edited URL) fall back to "all".
@@ -20,6 +20,7 @@ export function TaskBoard({ selectedParam }: { selectedParam?: string }) {
     <ProjectDnd>
       <ProjectStrip
         selected={selected}
+        onSelect={onSelectProject}
         allCount={state.tasks.length}
         unassignedCount={filterTasksByProject(state.tasks, "unassigned").length}
         projects={state.projects.map((p) => ({ ...p, taskCount: state.tasks.filter((t) => t.projectId === p.id).length }))}

@@ -31,11 +31,15 @@ export type OptimisticTask = {
 export type OptimisticProject = { id: string; name: string; color: string };
 export type OptimisticProjectFile = { id: string; projectId: string; fileName: string; href: string | null; isLink: boolean };
 
+// Finished during this session; the Receipts tab shows these before the next page load.
+export type CompletedTask = OptimisticTask & { completedAt: string | null };
+
 export type OptimisticState = {
   triage: OptimisticTriageItem[];
   tasks: OptimisticTask[];
   projects: OptimisticProject[];
   projectFiles: OptimisticProjectFile[];
+  completedTasks: CompletedTask[];
 };
 
 export type OptimisticChange =
@@ -45,7 +49,7 @@ export type OptimisticChange =
   | { type: "triage/promote"; id: string; task: OptimisticTask }
   | { type: "task/addSubtask"; taskId: string; subtask: OptimisticSubtask }
   | { type: "task/toggleSubtask"; taskId: string; subtaskId: string }
-  | { type: "task/complete"; id: string }
+  | { type: "task/complete"; id: string; at?: string }
   | { type: "task/assign"; id: string; projectId: string | null }
   | { type: "task/setEstimate"; id: string; minutes: number | null }
   | { type: "task/schedule"; id: string; start: string }
@@ -99,8 +103,15 @@ export function applyOptimisticChange(state: OptimisticState, change: Optimistic
         ...t,
         subtasks: t.subtasks.map((s) => (s.id === change.subtaskId ? { ...s, isCompleted: !s.isCompleted } : s)),
       }));
-    case "task/complete":
-      return { ...state, tasks: state.tasks.filter((t) => t.id !== change.id) };
+    case "task/complete": {
+      const done = state.tasks.find((t) => t.id === change.id);
+      if (!done) return state;
+      return {
+        ...state,
+        tasks: state.tasks.filter((t) => t.id !== change.id),
+        completedTasks: [{ ...done, status: "completed", activeTimerStartedAt: null, completedAt: change.at ?? null }, ...state.completedTasks],
+      };
+    }
     case "task/assign":
       return editTask(change.id, (t) => ({ ...t, projectId: change.projectId }));
     case "task/setEstimate":

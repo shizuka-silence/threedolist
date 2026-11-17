@@ -94,23 +94,32 @@ export function TaskCard({
     setUploading(false);
   }
 
-  async function addNote(event: React.FormEvent) {
+  function addNote(event: React.FormEvent) {
     event.preventDefault();
     const formData = new FormData();
     formData.set("taskId", id);
     formData.set("type", "text");
     formData.set("text", note);
-    const result = await run(null, () => addTaskProof(formData), () => [{ type: "task/addProof", id }]);
-    if (!result.error) setNote("");
+    const saved = note;
+    setNote("");
+    run({ type: "task/addProof", id }, async () => {
+      const result = await addTaskProof(formData);
+      if (result.error) setNote((current) => current || saved);
+      return result;
+    });
   }
 
-  async function addSubtaskSubmit(event: React.FormEvent) {
+  function addSubtaskSubmit(event: React.FormEvent) {
     event.preventDefault();
     const label = subtaskLabel.trim();
     if (!label) return;
     setSubtaskLabel("");
-    const result = await run(null, () => addSubtask(id, label), (r) => (r.subtask ? [{ type: "task/addSubtask", taskId: id, subtask: r.subtask }] : []));
-    if (result.error) setSubtaskLabel((current) => current || label); // don't lose the text on failure
+    const subtask = { id: crypto.randomUUID(), label, isCompleted: false, source: "user" as const };
+    run({ type: "task/addSubtask", taskId: id, subtask }, async () => {
+      const result = await addSubtask(id, label, subtask.id);
+      if (result.error) setSubtaskLabel((current) => current || label); // don't lose the text on failure
+      return result;
+    });
   }
 
   async function runAiPrep() {
@@ -324,7 +333,7 @@ export function TaskCard({
         size="lg"
         disabled={isProof && proofCount === 0}
         // Leaves the list at once; if the server refuses (e.g. no proof), it comes back with the error banner.
-        onClick={() => run({ type: "task/complete", id }, () => completeTask(id))}
+        onClick={() => run({ type: "task/complete", id, at: new Date().toISOString() }, () => completeTask(id))}
       >
         {isProof ? "Mark Complete" : "Done"}
       </Button>

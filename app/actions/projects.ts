@@ -3,7 +3,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { projectFiles, projects, tasks } from "@/db/schema";
-import { toClientProjectFile } from "@/lib/dashboard-rows";
+import { isUuid, toClientProjectFile } from "@/lib/dashboard-rows";
 import type { OptimisticProject, OptimisticProjectFile } from "@/lib/optimistic-rules";
 import { classifyProjectReference, isProjectLink as isLink, validateProjectInput } from "@/lib/project-rules";
 import { createClient } from "@/lib/supabase/server";
@@ -16,7 +16,8 @@ const BUCKET = "proof-uploads";
 
 async function requireUser() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data } = await supabase.auth.getClaims(); // verifies the JWT locally (no Auth server round trip) when the project uses asymmetric signing keys
+  const user = data?.claims ? { id: data.claims.sub, email: data.claims.email } : null;
   return { supabase, user };
 }
 
@@ -25,13 +26,14 @@ async function findOwnedProject(userId: string, projectId: string) {
   return project;
 }
 
-export async function createProject(name: string, color?: string): Promise<Result & { project?: OptimisticProject }> {
+export async function createProject(name: string, color?: string, id?: string): Promise<Result & { project?: OptimisticProject }> {
   const { user } = await requireUser();
   if (!user) return { error: "Not signed in." };
+  if (id && !isUuid(id)) return { error: "Invalid id." };
   try {
     const [project] = await db
       .insert(projects)
-      .values({ userId: user.id, ...validateProjectInput(name, color) })
+      .values({ id, userId: user.id, ...validateProjectInput(name, color) })
       .returning({ id: projects.id, name: projects.name, color: projects.color });
     return { project };
   } catch (e) {
@@ -97,17 +99,18 @@ export async function uploadProjectFile(projectId: string, formData: FormData): 
   return { file: toClientProjectFile(row, signed?.signedUrl ?? null) };
 }
 
-export async function addProjectLink(projectId: string, title: string, url: string): Promise<Result & { file?: OptimisticProjectFile }> {
+export async function addProjectLink(projectId: string, title: string, url: string, id?: string): Promise<Result & { file?: OptimisticProjectFile }> {
   const { user } = await requireUser();
   if (!user) return { error: "Not signed in." };
   if (!(await findOwnedProject(user.id, projectId))) return { error: "Project not found." };
+  if (id && !isUuid(id)) return { error: "Invalid id." };
 
   try {
     const ref = classifyProjectReference({ url });
     if (ref.kind !== "link") throw new Error("Add a link.");
     const [row] = await db
       .insert(projectFiles)
-      .values({ projectId, fileName: title.trim() || ref.url, fileUrl: ref.url })
+      .values({ id, projectId, fileName: title.trim() || ref.url, fileUrl: ref.url })
       .returning();
     return { file: toClientProjectFile(row, null) };
   } catch (e) {

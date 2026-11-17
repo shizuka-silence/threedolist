@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { tasks, triageItems } from "@/db/schema";
 import { parseEmailBatchToTriageItems } from "@/lib/ai";
-import { toClientTask } from "@/lib/dashboard-rows";
+import { isUuid, toClientTask } from "@/lib/dashboard-rows";
 import type { OptimisticTask, OptimisticTriageItem } from "@/lib/optimistic-rules";
 import { createClient } from "@/lib/supabase/server";
 import { buildPromotionTaskPayload, formatEmailBatchForAi, normalizeParsedTriageItems, parseTriageCategory, type NormalizedTriageItem } from "@/lib/triage-rules";
@@ -24,11 +24,13 @@ const triageClientColumns = {
 
 async function requireUser() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data } = await supabase.auth.getClaims(); // verifies the JWT locally (no Auth server round trip) when the project uses asymmetric signing keys
+  const user = data?.claims ? { id: data.claims.sub, email: data.claims.email } : null;
   return user;
 }
 
 export async function dumpToTriage(input: {
+  id?: string;
   sourceSubject: string;
   summary?: string;
   suggestedAction?: string;
@@ -38,10 +40,12 @@ export async function dumpToTriage(input: {
 
   const sourceSubject = input.sourceSubject.trim();
   if (!sourceSubject) return { error: "Type something to dump." };
+  if (input.id && !isUuid(input.id)) return { error: "Invalid id." };
 
   const [item] = await db
     .insert(triageItems)
     .values({
+      id: input.id,
       userId: user.id,
       sourceSubject,
       summary: input.summary?.trim() || null,
@@ -55,10 +59,11 @@ export async function dumpToTriage(input: {
 // Task defaults come from the item's category (buildPromotionTaskPayload); the caller may override title / type.
 export async function promoteTriageItem(
   itemId: string,
-  overrides: { title?: string; completionType?: "tick" | "proof" } = {},
+  overrides: { title?: string; completionType?: "tick" | "proof"; taskId?: string } = {},
 ): Promise<Result & { task?: OptimisticTask }> {
   const user = await requireUser();
   if (!user) return { error: "Not signed in." };
+  if (overrides.taskId && !isUuid(overrides.taskId)) return { error: "Invalid id." };
   if (overrides.completionType && overrides.completionType !== "tick" && overrides.completionType !== "proof") {
     return { error: "Invalid task type." };
   }
@@ -83,6 +88,7 @@ export async function promoteTriageItem(
     const [created] = await tx
       .insert(tasks)
       .values({
+        id: overrides.taskId,
         userId: user.id,
         title,
         completionType: overrides.completionType ?? defaults.completionType,

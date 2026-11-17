@@ -1,5 +1,5 @@
 import type { OptimisticProjectFile, OptimisticSubtask, OptimisticTask } from "@/lib/optimistic-rules";
-import { isProjectLink } from "@/lib/project-rules";
+import { isProjectLink } from "./project-rules";
 
 // DB row -> client state shape (Dates become ISO strings). Shared by app/page.tsx and the Server Actions
 // that hand a fresh row back to the client, so the shape is defined once.
@@ -37,6 +37,10 @@ export function toClientTask(
     subtasks: extra.subtasks ?? [],
   };
 }
+
+// Clients pick the id of rows they create so the UI can show them before the save returns.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const isUuid = (value: string) => UUID.test(value);
 
 // href is the link itself, or a signed URL for a Storage file (null if signing failed).
 export function toClientProjectFile(

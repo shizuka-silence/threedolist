@@ -1,17 +1,10 @@
 import { and, desc, eq, sql } from "drizzle-orm";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { signOut } from "@/app/login/actions";
-import { AddTaskForm } from "@/components/add-task-form";
-import { BrainDumpBar } from "@/components/brain-dump-bar";
-import { DayCalendar } from "@/components/day-calendar";
 import { DashboardProvider } from "@/components/dashboard-provider";
-import { ReceiptLog } from "@/components/receipt-log";
-import { TaskBoard } from "@/components/task-board";
-import { EmailDumpBox } from "@/components/email-dump-box";
-import { TriageBadge, TriageList } from "@/components/triage-list";
+import { DashboardShell } from "@/components/dashboard-shell";
 import { Button } from "@/components/ui/button";
 import { db } from "@/db";
 import { projectFiles, projects, taskProofs, taskSubtasks, tasks, triageItems } from "@/db/schema";
@@ -31,12 +24,10 @@ export default function Home({ searchParams }: { searchParams: Promise<{ tab?: s
 
 async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: string; project?: string }> }) {
   const { tab, project: projectParam } = await searchParams;
-  const showTriage = tab === "triage";
-  const showCalendar = tab === "calendar";
-  const showReceipts = tab === "receipts";
   await connection(); // per-user page: render at request time (auth/session code reads Date.now())
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data } = await supabase.auth.getClaims(); // verifies the JWT locally (no Auth server round trip) when the project uses asymmetric signing keys
+  const user = data?.claims ? { id: data.claims.sub, email: data.claims.email } : null;
   if (!user) redirect("/login");
 
   // Table names written out on purpose: in a single-table select Drizzle drops the "tasks." prefix from
@@ -100,7 +91,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
       .innerJoin(projects, eq(projects.id, projectFiles.projectId))
       .where(eq(projects.userId, user.id))
       .orderBy(projectFiles.createdAt),
-    showReceipts ? loadReceipts(supabase, user.id) : Promise.resolve([]),
+    loadReceipts(supabase, user.id), // loaded up front so the Receipts tab opens instantly
   ]);
 
   // Private bucket: one batched call signs image proofs and uploaded project files for 1 hour.
@@ -121,6 +112,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
   const initial: OptimisticState = {
     triage: pendingTriage,
     projects: projectRows,
+    completedTasks: [],
     projectFiles: fileRows.map((f) => toClientProjectFile(f, signedFileUrl.get(f.fileUrl) ?? null)),
     tasks: rows
       .filter((t) => t.status !== "completed")
@@ -135,46 +127,23 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
 
   return (
     <DashboardProvider initial={initial}>
-    <main className="mx-auto flex w-full max-w-xl flex-col gap-6 p-4">
-      <header className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold">ThreeDoList</h1>
-          <p className="truncate text-sm text-muted-foreground">{user.email}</p>
-        </div>
-        <form action={signOut}>
-          <Button type="submit" variant="outline">Sign out</Button>
-        </form>
-      </header>
-
-      <nav className="flex gap-2">
-        <Link href="/" className={tabClass(!showTriage && !showCalendar && !showReceipts)}>Tasks</Link>
-        <Link href="/?tab=calendar" className={tabClass(showCalendar)}>Calendar</Link>
-        <Link href="/?tab=receipts" className={tabClass(showReceipts)}>Receipts</Link>
-        <Link href="/?tab=triage" className={tabClass(showTriage)}>
-          Triage<TriageBadge />
-        </Link>
-      </nav>
-
-      {showCalendar ? (
-        <DayCalendar />
-      ) : showReceipts ? (
-        <ReceiptLog receipts={receipts} />
-      ) : showTriage ? (
-        <>
-          <EmailDumpBox canSyncGmail={Boolean(process.env.GMAIL_SYNC_WEBHOOK_URL)} />
-          <BrainDumpBar />
-          <TriageList />
-        </>
-      ) : (
-        <>
-          <AddTaskForm />
-          <TaskBoard selectedParam={projectParam} />
-        </>
-      )}
-    </main>
+      <main className="mx-auto flex w-full max-w-xl flex-col gap-6 p-4">
+        <header className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold">ThreeDoList</h1>
+            <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+          </div>
+          <form action={signOut}>
+            <Button type="submit" variant="outline">Sign out</Button>
+          </form>
+        </header>
+        <DashboardShell
+          initialTab={tab}
+          initialProject={projectParam}
+          receipts={receipts}
+          canSyncGmail={Boolean(process.env.GMAIL_SYNC_WEBHOOK_URL)}
+        />
+      </main>
     </DashboardProvider>
   );
 }
-
-const tabClass = (selected: boolean) =>
-  `flex h-10 flex-1 items-center justify-center rounded-md border text-sm font-medium ${selected ? "bg-primary text-primary-foreground" : ""}`;

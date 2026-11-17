@@ -5,6 +5,7 @@ import { addProjectLink, deleteProject, deleteProjectFile, uploadProjectFile } f
 import { useDashboard } from "@/components/dashboard-provider";
 import { Button } from "@/components/ui/button";
 import type { OptimisticProjectFile } from "@/lib/optimistic-rules";
+import { classifyProjectReference } from "@/lib/project-rules";
 
 export function ProjectWorkspace({ projectId, name }: { projectId: string; name: string }) {
   const [title, setTitle] = useState("");
@@ -75,10 +76,28 @@ export function ProjectWorkspace({ projectId, name }: { projectId: string; name:
       </Button>
 
       <form
-        onSubmit={async (e) => {
+        onSubmit={(e) => {
           e.preventDefault();
-          const result = await save(() => addProjectLink(projectId, title, url));
-          if (!result.error) { setTitle(""); setUrl(""); }
+          let ref;
+          try {
+            ref = classifyProjectReference({ url }); // same check the server makes
+          } catch (err) {
+            run(null, async () => ({ error: (err as Error).message }));
+            return;
+          }
+          if (ref.kind !== "link") return;
+          const file = { id: crypto.randomUUID(), projectId, fileName: title.trim() || ref.url, href: ref.url, isLink: true };
+          const saved = { title, url };
+          setTitle("");
+          setUrl("");
+          run({ type: "file/upsert", file }, async () => {
+            const result = await addProjectLink(projectId, saved.title, saved.url, file.id);
+            if (result.error) {
+              setTitle((t) => t || saved.title);
+              setUrl((u) => u || saved.url);
+            }
+            return result;
+          });
         }}
         className="flex flex-wrap gap-2"
       >

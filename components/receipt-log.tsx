@@ -9,8 +9,20 @@ const pill = (on: boolean) =>
   `flex h-10 shrink-0 items-center gap-2 rounded-md border px-3 text-sm font-medium ${on ? "bg-primary text-primary-foreground" : ""}`;
 
 // Receipts come from the server on each visit to this tab, so they already include anything completed earlier.
-export function ReceiptLog({ receipts }: { receipts: Receipt[] }) {
-  const { state: { projects } } = useDashboard();
+export function ReceiptLog({ receipts: serverReceipts }: { receipts: Receipt[] }) {
+  const { state: { projects, completedTasks } } = useDashboard();
+  // Tasks finished this session show up before the next page load; the server list wins once it has them.
+  const justCompleted: Receipt[] = completedTasks
+    .filter((t) => !serverReceipts.some((r) => r.id === t.id))
+    .map((t) => {
+      const project = projects.find((p) => p.id === t.projectId);
+      return {
+        id: t.id, title: t.title, notes: null, projectId: t.projectId, projectName: project?.name ?? null,
+        projectColor: project?.color ?? null, estimatedMinutes: t.estimatedMinutes, actualMinutes: t.actualMinutes,
+        completedAt: t.completedAt, proofs: [],
+      };
+    });
+  const receipts = [...justCompleted, ...serverReceipts];
   const [query, setQuery] = useState("");
   const [projectId, setProjectId] = useState("all");
   const shown = filterReceiptTasks(receipts, query, projectId);
