@@ -23,9 +23,11 @@ export async function proxy(request: NextRequest) {
 
   const { data } = await supabase.auth.getClaims(); // verifies the JWT locally (no Auth server round trip) when the project uses asymmetric signing keys
   const user = data?.claims ? { id: data.claims.sub, email: data.claims.email } : null;
-  const isLoginPage = request.nextUrl.pathname === "/login";
+  const path = request.nextUrl.pathname;
+  const isLoginPage = path === "/login";
+  const isPublic = isLoginPage || path === "/forgot-password" || path === "/auth/confirm"; // /reset-password needs the session /auth/confirm creates
 
-  if (!user && !isLoginPage) return NextResponse.redirect(new URL("/login", request.url));
+  if (!user && !isPublic) return NextResponse.redirect(new URL("/login", request.url));
   if (user && isLoginPage) return NextResponse.redirect(new URL("/", request.url));
   return response;
 }

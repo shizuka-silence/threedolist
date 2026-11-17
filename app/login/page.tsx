@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import { signIn, signUp } from "./actions";
@@ -43,6 +44,7 @@ export default function LoginPage({ searchParams }: { searchParams: SearchParams
         </Suspense>
         <Button type="submit" formAction={signIn} size="lg">Sign in</Button>
         <Button type="submit" formAction={signUp} size="lg" variant="outline">Sign up</Button>
+        <Link href="/forgot-password" className="text-center text-sm text-muted-foreground underline underline-offset-2">Forgot password?</Link>
       </form>
     </main>
   );
