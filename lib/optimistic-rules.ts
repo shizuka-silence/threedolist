@@ -28,7 +28,15 @@ export type OptimisticTask = {
   subtasks: OptimisticSubtask[];
 };
 
-export type OptimisticState = { triage: OptimisticTriageItem[]; tasks: OptimisticTask[] };
+export type OptimisticProject = { id: string; name: string; color: string };
+export type OptimisticProjectFile = { id: string; projectId: string; fileName: string; href: string | null; isLink: boolean };
+
+export type OptimisticState = {
+  triage: OptimisticTriageItem[];
+  tasks: OptimisticTask[];
+  projects: OptimisticProject[];
+  projectFiles: OptimisticProjectFile[];
+};
 
 export type OptimisticChange =
   | { type: "triage/reclassify"; id: string; category: TriageCategory }
@@ -41,7 +49,26 @@ export type OptimisticChange =
   | { type: "task/assign"; id: string; projectId: string | null }
   | { type: "task/setEstimate"; id: string; minutes: number | null }
   | { type: "task/schedule"; id: string; start: string }
-  | { type: "task/unschedule"; id: string };
+  | { type: "task/unschedule"; id: string }
+  // Rows the server returned. `replaces` swaps a temp-id placeholder for the real row.
+  | { type: "task/upsert"; task: OptimisticTask; replaces?: string }
+  | { type: "triage/upsert"; item: OptimisticTriageItem; replaces?: string }
+  | { type: "project/upsert"; project: OptimisticProject }
+  | { type: "file/upsert"; file: OptimisticProjectFile }
+  | { type: "task/remove"; id: string }
+  | { type: "project/remove"; id: string }
+  | { type: "file/remove"; id: string }
+  | { type: "task/startTimer"; id: string; at: string }
+  | { type: "task/stopTimer"; id: string; minutes: number }
+  | { type: "task/addProof"; id: string; thumbnail?: { id: string; url: string } }
+  | { type: "task/setPrep"; id: string; estimatedMinutes: number | null; questions: string[] | null; pitfalls: OptimisticSubtask[] };
+
+// Insert at the top, or replace in place when the id (or the temp id in `replaces`) already exists.
+function upsertFirst<T extends { id: string }>(list: T[], row: T, replaces?: string): T[] {
+  const at = list.findIndex((x) => x.id === (replaces ?? row.id));
+  if (at === -1) return [row, ...list];
+  return list.map((x, i) => (i === at ? row : x));
+}
 
 export function buildOptimisticTask(id: string, title: string, completionType: "tick" | "proof"): OptimisticTask {
   return {
@@ -64,7 +91,7 @@ export function applyOptimisticChange(state: OptimisticState, change: Optimistic
     case "triage/add":
       return { ...state, triage: [change.item, ...state.triage] };
     case "triage/promote":
-      return { triage: state.triage.filter((i) => i.id !== change.id), tasks: [change.task, ...state.tasks] };
+      return { ...state, triage: state.triage.filter((i) => i.id !== change.id), tasks: [change.task, ...state.tasks] };
     case "task/addSubtask":
       return editTask(change.taskId, (t) => ({ ...t, subtasks: [...t.subtasks, change.subtask] }));
     case "task/toggleSubtask":
@@ -82,5 +109,41 @@ export function applyOptimisticChange(state: OptimisticState, change: Optimistic
       return editTask(change.id, (t) => ({ ...t, scheduledStart: change.start, status: "scheduled" }));
     case "task/unschedule":
       return editTask(change.id, (t) => ({ ...t, scheduledStart: null, status: "todo" }));
+    case "task/upsert":
+      return { ...state, tasks: upsertFirst(state.tasks, change.task, change.replaces) };
+    case "triage/upsert":
+      return { ...state, triage: upsertFirst(state.triage, change.item, change.replaces) };
+    case "project/upsert":
+      return { ...state, projects: [...state.projects.filter((p) => p.id !== change.project.id), change.project] };
+    case "file/upsert":
+      return { ...state, projectFiles: [...state.projectFiles.filter((f) => f.id !== change.file.id), change.file] };
+    case "task/remove":
+      return { ...state, tasks: state.tasks.filter((t) => t.id !== change.id) };
+    case "project/remove":
+      return {
+        ...state,
+        projects: state.projects.filter((p) => p.id !== change.id),
+        projectFiles: state.projectFiles.filter((f) => f.projectId !== change.id),
+        tasks: state.tasks.map((t) => (t.projectId === change.id ? { ...t, projectId: null } : t)),
+      };
+    case "file/remove":
+      return { ...state, projectFiles: state.projectFiles.filter((f) => f.id !== change.id) };
+    case "task/startTimer":
+      return editTask(change.id, (t) => ({ ...t, activeTimerStartedAt: change.at }));
+    case "task/stopTimer":
+      return editTask(change.id, (t) => ({ ...t, actualMinutes: t.actualMinutes + change.minutes, activeTimerStartedAt: null }));
+    case "task/addProof":
+      return editTask(change.id, (t) => ({
+        ...t,
+        proofCount: t.proofCount + 1,
+        thumbnails: change.thumbnail ? [...t.thumbnails, change.thumbnail] : t.thumbnails,
+      }));
+    case "task/setPrep":
+      return editTask(change.id, (t) => ({
+        ...t,
+        estimatedMinutes: t.estimatedMinutes ?? change.estimatedMinutes, // never overwrite a manual estimate
+        aiClarifyingQuestions: change.questions ?? t.aiClarifyingQuestions,
+        subtasks: [...t.subtasks.filter((s) => s.source !== "ai_pitfall"), ...change.pitfalls],
+      }));
   }
 }

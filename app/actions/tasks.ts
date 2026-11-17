@@ -1,10 +1,11 @@
 "use server";
 
 import { and, eq, ne, sql } from "drizzle-orm";
-import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { taskProofs, taskSubtasks, tasks, timeLogs } from "@/db/schema";
 import { generateTaskPrep } from "@/lib/ai";
+import { toClientTask } from "@/lib/dashboard-rows";
+import type { OptimisticSubtask, OptimisticTask } from "@/lib/optimistic-rules";
 import {
   assertCanComplete, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate, type AiPrepParts,
 } from "@/lib/task-rules";
@@ -33,7 +34,7 @@ export async function createTask(input: {
   completionType: "tick" | "proof";
   estimatedMinutes?: number;
   notes?: string;
-}): Promise<Result> {
+}): Promise<Result & { task?: OptimisticTask }> {
   const { user } = await requireUser();
   if (!user) return { error: "Not signed in." };
 
@@ -45,19 +46,22 @@ export async function createTask(input: {
     return { error: "Estimated minutes must be a whole number above 0." };
   }
 
-  await db.insert(tasks).values({
-    userId: user.id,
-    title,
-    completionType: input.completionType,
-    estimatedMinutes: minutes,
-    notes: input.notes?.trim() || null,
-  });
-  revalidatePath("/");
-  return {};
+  const [row] = await db
+    .insert(tasks)
+    .values({
+      userId: user.id,
+      title,
+      completionType: input.completionType,
+      estimatedMinutes: minutes,
+      notes: input.notes?.trim() || null,
+    })
+    .returning();
+  return { task: toClientTask(row) };
 }
 
 // FormData because images are sent as files. Fields: taskId, type ("image" | "text"), file | text, caption?
-export async function addTaskProof(formData: FormData): Promise<Result> {
+// Returns a signed thumbnail URL for image proofs so the card can show it without a re-render.
+export async function addTaskProof(formData: FormData): Promise<Result & { thumbnail?: { id: string; url: string } }> {
   const { supabase, user } = await requireUser();
   if (!user) return { error: "Not signed in." };
 
@@ -75,7 +79,12 @@ export async function addTaskProof(formData: FormData): Promise<Result> {
     const { error } = await supabase.storage.from(PROOF_BUCKET).upload(path, file, { contentType: file.type });
     if (error) return { error: `Upload failed: ${error.message}` };
 
-    await db.insert(taskProofs).values({ taskId, type: "image", storagePathOrUrl: path, caption });
+    const [proof] = await db
+      .insert(taskProofs)
+      .values({ taskId, type: "image", storagePathOrUrl: path, caption })
+      .returning({ id: taskProofs.id });
+    const { data: signed } = await supabase.storage.from(PROOF_BUCKET).createSignedUrl(path, 3600);
+    return { thumbnail: signed ? { id: proof.id, url: signed.signedUrl } : undefined };
   } else {
     const text = String(formData.get("text") ?? "").trim();
     if (!text) return { error: "Type a note or paste a link first." };
@@ -83,7 +92,6 @@ export async function addTaskProof(formData: FormData): Promise<Result> {
     await db.insert(taskProofs).values({ taskId, type, storagePathOrUrl: text, caption });
   }
 
-  revalidatePath("/");
   return {};
 }
 
@@ -105,7 +113,6 @@ export async function completeTask(taskId: string): Promise<Result> {
     .update(tasks)
     .set({ status: "completed", completedAt: new Date() })
     .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)));
-  revalidatePath("/");
   return {};
 }
 
@@ -118,7 +125,6 @@ export async function startTaskTimer(taskId: string): Promise<Result> {
   if (task.activeTimerStartedAt) return { error: "Timer is already running." };
 
   await db.update(tasks).set({ activeTimerStartedAt: new Date() }).where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)));
-  revalidatePath("/");
   return {};
 }
 
@@ -144,7 +150,6 @@ export async function stopTaskTimer(taskId: string, trimmedIdleMinutes: number):
       .set({ actualMinutes: sql`${tasks.actualMinutes} + ${durationMinutes}`, activeTimerStartedAt: null })
       .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)));
   });
-  revalidatePath("/");
   return {};
 }
 
@@ -160,7 +165,6 @@ export async function scheduleTask(taskId: string, scheduledStart: Date): Promis
     .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id), ne(tasks.status, "completed")))
     .returning({ id: tasks.id });
   if (updated.length === 0) return { error: "Task not found." };
-  revalidatePath("/");
   return {};
 }
 
@@ -174,7 +178,6 @@ export async function unscheduleTask(taskId: string): Promise<Result> {
     .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id), ne(tasks.status, "completed")))
     .returning({ id: tasks.id });
   if (updated.length === 0) return { error: "Task not found." };
-  revalidatePath("/");
   return {};
 }
 
@@ -196,7 +199,6 @@ export async function deleteTask(taskId: string): Promise<Result> {
 
   await db.delete(tasks).where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id))); // proofs cascade
   if (images.length) await supabase.storage.from(PROOF_BUCKET).remove(images.map((i) => i.path));
-  revalidatePath("/");
   return {};
 }
 
@@ -213,12 +215,13 @@ export async function updateTaskEstimate(taskId: string, estimatedMinutes: numbe
     .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)))
     .returning({ id: tasks.id });
   if (updated.length === 0) return { error: "Task not found." };
-  revalidatePath("/");
   return {};
 }
 
 // Runs only when the user clicks AI Prep; never call this from task creation.
-export async function runAiTaskPrep(taskId: string, parts: AiPrepParts): Promise<Result> {
+export async function runAiTaskPrep(taskId: string, parts: AiPrepParts): Promise<Result & {
+  prep?: { estimatedMinutes: number | null; questions: string[] | null; pitfalls: OptimisticSubtask[] };
+}> {
   const { user } = await requireUser();
   if (!user) return { error: "Not signed in." };
   if (!parts.estimate && !parts.questions && !parts.pitfalls) return { error: "Pick at least one thing for AI to provide." };
@@ -247,20 +250,33 @@ export async function runAiTaskPrep(taskId: string, parts: AiPrepParts): Promise
       await tx.insert(taskSubtasks).values(prep.pitfalls.map((label) => ({ taskId, label, source: "ai_pitfall" as const })));
     }
   });
-  revalidatePath("/");
-  return {};
+
+  // Every pitfall now on the task (checked ones are kept), so the client can swap its pitfall list wholesale.
+  const pitfalls = await db
+    .select({ id: taskSubtasks.id, label: taskSubtasks.label, isCompleted: taskSubtasks.isCompleted, source: taskSubtasks.source })
+    .from(taskSubtasks)
+    .where(and(eq(taskSubtasks.taskId, taskId), eq(taskSubtasks.source, "ai_pitfall")));
+  return {
+    prep: {
+      estimatedMinutes: prep.estimatedMinutes === null ? null : resolveAiEstimate(task.estimatedMinutes, prep.estimatedMinutes),
+      questions: parts.questions ? prep.clarifyingQuestions : null,
+      pitfalls,
+    },
+  };
 }
 
-export async function addSubtask(taskId: string, label: string): Promise<Result> {
+export async function addSubtask(taskId: string, label: string): Promise<Result & { subtask?: OptimisticSubtask }> {
   const { user } = await requireUser();
   if (!user) return { error: "Not signed in." };
   const trimmed = label.trim();
   if (!trimmed) return { error: "Type a subtask first." };
   if (!(await findOwnedTask(user.id, taskId))) return { error: "Task not found." };
 
-  await db.insert(taskSubtasks).values({ taskId, label: trimmed, source: "user" });
-  revalidatePath("/");
-  return {};
+  const [subtask] = await db
+    .insert(taskSubtasks)
+    .values({ taskId, label: trimmed, source: "user" })
+    .returning({ id: taskSubtasks.id, label: taskSubtasks.label, isCompleted: taskSubtasks.isCompleted, source: taskSubtasks.source });
+  return { subtask };
 }
 
 export async function toggleSubtask(subtaskId: string): Promise<Result> {
@@ -276,6 +292,5 @@ export async function toggleSubtask(subtaskId: string): Promise<Result> {
   if (!owned) return { error: "Subtask not found." };
 
   await db.update(taskSubtasks).set({ isCompleted: sql`not ${taskSubtasks.isCompleted}` }).where(eq(taskSubtasks.id, subtaskId));
-  revalidatePath("/");
   return {};
 }

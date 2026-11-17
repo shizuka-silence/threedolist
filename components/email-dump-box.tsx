@@ -1,20 +1,29 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { ingestEmailDump, triggerGmailSync } from "@/app/actions/triage";
+import { useDashboard } from "@/components/dashboard-provider";
 import { Button } from "@/components/ui/button";
 
 export function EmailDumpBox({ canSyncGmail }: { canSyncGmail: boolean }) {
   const [text, setText] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
+  const { run } = useDashboard();
 
-  function run(action: () => Promise<{ error?: string }>, onOk?: () => void) {
-    startTransition(async () => {
-      const result = await action();
-      setError(result.error ?? null);
-      if (!result.error) onOk?.();
-    });
+  async function sort() {
+    setPending(true);
+    // Reversed so the first email ends up on top (each upsert lands first).
+    const result = await run(null, () => ingestEmailDump(text), (r) =>
+      (r.items ?? []).toReversed().map((item) => ({ type: "triage/upsert" as const, item })),
+    );
+    setPending(false);
+    if (!result.error) setText("");
+  }
+
+  async function syncGmail() {
+    setPending(true);
+    await run(null, triggerGmailSync); // new emails appear on the next page load
+    setPending(false);
   }
 
   return (
@@ -31,17 +40,16 @@ export function EmailDumpBox({ canSyncGmail }: { canSyncGmail: boolean }) {
             placeholder="Paste one or many emails…"
             className="w-full rounded-md border bg-background p-3 text-base"
           />
-          <Button onClick={() => run(() => ingestEmailDump(text), () => setText(""))} disabled={pending || !text.trim()} className="h-10">
+          <Button onClick={sort} disabled={pending || !text.trim()} className="h-10">
             {pending ? "Sorting…" : "Sort with AI"}
           </Button>
         </div>
       </details>
       {canSyncGmail && (
-        <Button variant="outline" onClick={() => run(triggerGmailSync)} disabled={pending} className="h-10">
+        <Button variant="outline" onClick={syncGmail} disabled={pending} className="h-10">
           Sync Gmail
         </Button>
       )}
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }

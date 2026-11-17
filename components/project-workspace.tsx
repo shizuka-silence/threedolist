@@ -1,29 +1,24 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState } from "react";
 import { addProjectLink, deleteProject, deleteProjectFile, uploadProjectFile } from "@/app/actions/projects";
+import { useDashboard } from "@/components/dashboard-provider";
 import { Button } from "@/components/ui/button";
+import type { OptimisticProjectFile } from "@/lib/optimistic-rules";
 
-type Props = {
-  projectId: string;
-  name: string;
-  // href is a signed URL for Storage files, or the link itself
-  files: { id: string; fileName: string; href: string | null; isLink: boolean }[];
-};
-
-export function ProjectWorkspace({ projectId, name, files }: Props) {
+export function ProjectWorkspace({ projectId, name }: { projectId: string; name: string }) {
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [busy, setBusy] = useState(false); // uploads and link adds wait for the server, which returns the new row
+  const { state, run } = useDashboard();
+  const files = state.projectFiles.filter((f) => f.projectId === projectId);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  function run(action: () => Promise<{ error?: string }>, onSuccess?: () => void) {
-    startTransition(async () => {
-      const result = await action();
-      setError(result.error ?? null);
-      if (!result.error) onSuccess?.();
-    });
+  async function save(action: () => Promise<{ error?: string; file?: OptimisticProjectFile }>) {
+    setBusy(true);
+    const result = await run(null, action, (r) => (r.file ? [{ type: "file/upsert", file: r.file }] : []));
+    setBusy(false);
+    return result;
   }
 
   return (
@@ -33,10 +28,9 @@ export function ProjectWorkspace({ projectId, name, files }: Props) {
         <Button
           variant="ghost"
           size="sm"
-          disabled={pending}
           onClick={() => {
             if (confirm(`Delete "${name}"? Its tasks are kept and become unassigned; its files are removed.`)) {
-              run(() => deleteProject(projectId));
+              run({ type: "project/remove", id: projectId }, () => deleteProject(projectId));
             }
           }}
         >
@@ -54,7 +48,7 @@ export function ProjectWorkspace({ projectId, name, files }: Props) {
             ) : (
               <span className="min-w-0 truncate text-muted-foreground">{f.fileName} (unavailable)</span>
             )}
-            <Button variant="ghost" size="sm" disabled={pending} onClick={() => run(() => deleteProjectFile(f.id))}>
+            <Button variant="ghost" size="sm" onClick={() => run({ type: "file/remove", id: f.id }, () => deleteProjectFile(f.id))}>
               Delete
             </Button>
           </li>
@@ -71,19 +65,20 @@ export function ProjectWorkspace({ projectId, name, files }: Props) {
           if (file) {
             const formData = new FormData();
             formData.set("file", file);
-            run(() => uploadProjectFile(projectId, formData));
+            save(() => uploadProjectFile(projectId, formData));
           }
           e.target.value = "";
         }}
       />
-      <Button type="button" variant="outline" size="lg" disabled={pending} onClick={() => fileInput.current?.click()}>
-        Upload file
+      <Button type="button" variant="outline" size="lg" disabled={busy} onClick={() => fileInput.current?.click()}>
+        {busy ? "Saving…" : "Upload file"}
       </Button>
 
       <form
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
-          run(() => addProjectLink(projectId, title, url), () => { setTitle(""); setUrl(""); });
+          const result = await save(() => addProjectLink(projectId, title, url));
+          if (!result.error) { setTitle(""); setUrl(""); }
         }}
         className="flex flex-wrap gap-2"
       >
@@ -101,9 +96,8 @@ export function ProjectWorkspace({ projectId, name, files }: Props) {
           aria-label="Link URL"
           className="h-9 min-w-0 flex-[2] basis-40 rounded-md border bg-background px-3 text-base"
         />
-        <Button type="submit" variant="outline" disabled={pending}>Add link</Button>
+        <Button type="submit" variant="outline" disabled={busy}>Add link</Button>
       </form>
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </section>
   );
 }

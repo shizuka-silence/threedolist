@@ -4,16 +4,16 @@ import { useDashboard } from "@/components/dashboard-provider";
 import { DraggableTask } from "@/components/draggable-task";
 import { ProjectDnd } from "@/components/project-dnd";
 import { ProjectStrip } from "@/components/project-strip";
+import { ProjectWorkspace } from "@/components/project-workspace";
 import { TaskCard } from "@/components/task-card";
 import { filterTasksByProject } from "@/lib/project-rules";
 
-// Folder counts and the visible list are derived from the optimistic tasks, so they move together with any change.
-export function TaskBoard({ selected, projects, workspace }: {
-  selected: string; // "all" | "unassigned" | project id
-  projects: { id: string; name: string; color: string }[];
-  workspace: React.ReactNode;
-}) {
+// Folder counts and the visible list are derived from dashboard state, so they move together with any change.
+export function TaskBoard({ selectedParam }: { selectedParam?: string }) {
   const { state } = useDashboard();
+  const selectedProject = state.projects.find((p) => p.id === selectedParam);
+  // Unknown ids (deleted project, hand-edited URL) fall back to "all".
+  const selected = selectedParam === "unassigned" || selectedProject ? selectedParam! : "all";
   const visible = filterTasksByProject(state.tasks, selected);
 
   return (
@@ -22,13 +22,13 @@ export function TaskBoard({ selected, projects, workspace }: {
         selected={selected}
         allCount={state.tasks.length}
         unassignedCount={filterTasksByProject(state.tasks, "unassigned").length}
-        projects={projects.map((p) => ({ ...p, taskCount: state.tasks.filter((t) => t.projectId === p.id).length }))}
+        projects={state.projects.map((p) => ({ ...p, taskCount: state.tasks.filter((t) => t.projectId === p.id).length }))}
       />
-      {workspace}
+      {selectedProject && <ProjectWorkspace projectId={selectedProject.id} name={selectedProject.name} />}
       <ul className="flex flex-col gap-3">
         {visible.map((task) => (
           <DraggableTask key={task.id} id={task.id}>
-            <TaskCard {...task} projects={projects} />
+            <TaskCard {...task} projects={state.projects} />
           </DraggableTask>
         ))}
         {visible.length === 0 && <p className="text-muted-foreground">Nothing to do here. Add a task above.</p>}

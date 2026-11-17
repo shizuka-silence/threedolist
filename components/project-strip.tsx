@@ -2,8 +2,9 @@
 
 import { useDroppable } from "@dnd-kit/core";
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { createProject } from "@/app/actions/projects";
+import { useDashboard } from "@/components/dashboard-provider";
 import { Button } from "@/components/ui/button";
 
 type Props = {
@@ -32,16 +33,15 @@ function Folder({ dropId, href, selected, label, count, color }: {
 
 export function ProjectStrip({ selected, allCount, unassignedCount, projects }: Props) {
   const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
+  const { run } = useDashboard();
 
-  function add(event: React.FormEvent) {
+  async function add(event: React.FormEvent) {
     event.preventDefault();
-    startTransition(async () => {
-      const result = await createProject(name);
-      setError(result.error ?? null);
-      if (!result.error) setName("");
-    });
+    setPending(true);
+    const result = await run(null, () => createProject(name), (r) => (r.project ? [{ type: "project/upsert", project: r.project }] : []));
+    setPending(false);
+    if (!result.error) setName("");
   }
 
   return (
@@ -69,7 +69,6 @@ export function ProjectStrip({ selected, allCount, unassignedCount, projects }: 
         />
         <Button type="submit" variant="outline" disabled={pending}>Create</Button>
       </form>
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }

@@ -47,7 +47,11 @@ export function TriageCard({ id, category, sourceSubject, summary, suggestedActi
   // The card disappears at once; a failure restores it and the dashboard banner explains why.
   function promote(overrides?: { title: string; completionType: "tick" | "proof" }) {
     const task = buildOptimisticTask(crypto.randomUUID(), overrides?.title.trim() || defaults.title, overrides?.completionType ?? defaults.completionType);
-    run({ type: "triage/promote", id, task }, () => promoteTriageItem(id, overrides));
+    run(
+      { type: "triage/promote", id, task },
+      () => promoteTriageItem(id, overrides),
+      (result) => (result.task ? [{ type: "task/upsert", task: result.task, replaces: task.id }] : []),
+    );
   }
 
   const dismiss = () => run({ type: "triage/remove", id }, () => dismissTriageItem(id));

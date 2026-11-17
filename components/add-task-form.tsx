@@ -1,30 +1,30 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { createTask } from "@/app/actions/tasks";
+import { useDashboard } from "@/components/dashboard-provider";
 import { Button } from "@/components/ui/button";
 
 export function AddTaskForm() {
   const [title, setTitle] = useState("");
   const [minutes, setMinutes] = useState("");
   const [completionType, setCompletionType] = useState<"tick" | "proof">("proof");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
+  const { run } = useDashboard();
 
-  function submit(event: React.FormEvent) {
+  async function submit(event: React.FormEvent) {
     event.preventDefault();
-    startTransition(async () => {
-      const result = await createTask({
-        title,
-        completionType,
-        estimatedMinutes: minutes ? Number(minutes) : undefined,
-      });
-      setError(result.error ?? null);
-      if (!result.error) {
-        setTitle("");
-        setMinutes("");
-      }
-    });
+    setPending(true);
+    const result = await run(
+      null,
+      () => createTask({ title, completionType, estimatedMinutes: minutes ? Number(minutes) : undefined }),
+      (r) => (r.task ? [{ type: "task/upsert", task: r.task }] : []),
+    );
+    setPending(false);
+    if (!result.error) {
+      setTitle("");
+      setMinutes("");
+    }
   }
 
   return (
@@ -71,7 +71,6 @@ export function AddTaskForm() {
           Add
         </Button>
       </div>
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     </form>
   );
 }

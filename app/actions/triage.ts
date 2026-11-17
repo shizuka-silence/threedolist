@@ -1,16 +1,26 @@
 "use server";
 
 import { and, eq } from "drizzle-orm";
-import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { tasks, triageItems } from "@/db/schema";
 import { parseEmailBatchToTriageItems } from "@/lib/ai";
+import { toClientTask } from "@/lib/dashboard-rows";
+import type { OptimisticTask, OptimisticTriageItem } from "@/lib/optimistic-rules";
 import { createClient } from "@/lib/supabase/server";
 import { buildPromotionTaskPayload, formatEmailBatchForAi, normalizeParsedTriageItems, parseTriageCategory, type NormalizedTriageItem } from "@/lib/triage-rules";
 
 // Drizzle bypasses RLS, so every action below must check getUser() and filter by user.id.
 
 type Result = { error?: string };
+
+// The columns the dashboard keeps for a pending triage item (same shape as OptimisticTriageItem).
+const triageClientColumns = {
+  id: triageItems.id,
+  category: triageItems.category,
+  sourceSubject: triageItems.sourceSubject,
+  summary: triageItems.summary,
+  suggestedAction: triageItems.suggestedAction,
+};
 
 async function requireUser() {
   const supabase = await createClient();
@@ -22,29 +32,31 @@ export async function dumpToTriage(input: {
   sourceSubject: string;
   summary?: string;
   suggestedAction?: string;
-}): Promise<Result> {
+}): Promise<Result & { item?: OptimisticTriageItem }> {
   const user = await requireUser();
   if (!user) return { error: "Not signed in." };
 
   const sourceSubject = input.sourceSubject.trim();
   if (!sourceSubject) return { error: "Type something to dump." };
 
-  await db.insert(triageItems).values({
-    userId: user.id,
-    sourceSubject,
-    summary: input.summary?.trim() || null,
-    suggestedAction: input.suggestedAction?.trim() || null,
-    status: "pending",
-  });
-  revalidatePath("/");
-  return {};
+  const [item] = await db
+    .insert(triageItems)
+    .values({
+      userId: user.id,
+      sourceSubject,
+      summary: input.summary?.trim() || null,
+      suggestedAction: input.suggestedAction?.trim() || null,
+      status: "pending",
+    })
+    .returning(triageClientColumns);
+  return { item };
 }
 
 // Task defaults come from the item's category (buildPromotionTaskPayload); the caller may override title / type.
 export async function promoteTriageItem(
   itemId: string,
   overrides: { title?: string; completionType?: "tick" | "proof" } = {},
-): Promise<Result> {
+): Promise<Result & { task?: OptimisticTask }> {
   const user = await requireUser();
   if (!user) return { error: "Not signed in." };
   if (overrides.completionType && overrides.completionType !== "tick" && overrides.completionType !== "proof") {
@@ -67,23 +79,25 @@ export async function promoteTriageItem(
       .set({ status: "promoted" })
       .where(and(eq(triageItems.id, itemId), eq(triageItems.userId, user.id), eq(triageItems.status, "pending")))
       .returning({ id: triageItems.id });
-    if (!claimed) return false;
-    await tx.insert(tasks).values({
-      userId: user.id,
-      title,
-      completionType: overrides.completionType ?? defaults.completionType,
-      notes: defaults.notes || null,
-    });
-    return true;
+    if (!claimed) return null;
+    const [created] = await tx
+      .insert(tasks)
+      .values({
+        userId: user.id,
+        title,
+        completionType: overrides.completionType ?? defaults.completionType,
+        notes: defaults.notes || null,
+      })
+      .returning();
+    return created;
   });
   if (!promoted) return { error: "Triage item not found." };
 
-  revalidatePath("/");
-  return {};
+  return { task: toClientTask(promoted) };
 }
 
 // Paste raw email text; one AI call sorts it into categorized items.
-export async function ingestEmailDump(rawText: string): Promise<Result> {
+export async function ingestEmailDump(rawText: string): Promise<Result & { items?: OptimisticTriageItem[] }> {
   const user = await requireUser();
   if (!user) return { error: "Not signed in." };
   if (!rawText.trim()) return { error: "Paste some email text first." };
@@ -98,9 +112,11 @@ export async function ingestEmailDump(rawText: string): Promise<Result> {
   }
   if (items.length === 0) return { error: "No items found in that text." };
 
-  await db.insert(triageItems).values(items.map((item) => ({ ...item, userId: user.id })));
-  revalidatePath("/");
-  return {};
+  const inserted = await db
+    .insert(triageItems)
+    .values(items.map((item) => ({ ...item, userId: user.id })))
+    .returning(triageClientColumns);
+  return { items: inserted };
 }
 
 // Optional: pokes the Apps Script web app, which then POSTs its emails to /api/triage.
@@ -116,7 +132,6 @@ export async function triggerGmailSync(): Promise<Result> {
   } catch {
     return { error: "Could not reach the Gmail sync URL." };
   }
-  revalidatePath("/");
   return {};
 }
 
@@ -138,7 +153,6 @@ export async function updateTriageItemCategory(triageItemId: string, category: s
     .returning({ id: triageItems.id });
   if (updated.length === 0) return { error: "Triage item not found." };
 
-  revalidatePath("/");
   return {};
 }
 
@@ -153,6 +167,5 @@ export async function dismissTriageItem(itemId: string): Promise<Result> {
     .returning({ id: triageItems.id });
   if (dismissed.length === 0) return { error: "Triage item not found." };
 
-  revalidatePath("/");
   return {};
 }

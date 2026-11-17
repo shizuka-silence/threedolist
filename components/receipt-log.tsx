@@ -8,20 +8,9 @@ import { filterReceiptTasks, formatReceiptVariance } from "@/lib/receipt-rules";
 const pill = (on: boolean) =>
   `flex h-10 shrink-0 items-center gap-2 rounded-md border px-3 text-sm font-medium ${on ? "bg-primary text-primary-foreground" : ""}`;
 
-export function ReceiptLog({ receipts: serverReceipts, projects }: { receipts: Receipt[]; projects: { id: string; name: string; color: string }[] }) {
-  const { completedNow } = useDashboard();
-  // Tasks completed a moment ago show up here before the server's list catches up.
-  const justCompleted: Receipt[] = completedNow
-    .filter((t) => !serverReceipts.some((r) => r.id === t.id))
-    .map((t) => {
-      const project = projects.find((p) => p.id === t.projectId);
-      return {
-        id: t.id, title: t.title, notes: null, projectId: t.projectId, projectName: project?.name ?? null,
-        projectColor: project?.color ?? null, estimatedMinutes: t.estimatedMinutes, actualMinutes: t.actualMinutes,
-        completedAt: new Date().toISOString(), proofs: [],
-      };
-    });
-  const receipts = [...justCompleted, ...serverReceipts];
+// Receipts come from the server on each visit to this tab, so they already include anything completed earlier.
+export function ReceiptLog({ receipts }: { receipts: Receipt[] }) {
+  const { state: { projects } } = useDashboard();
   const [query, setQuery] = useState("");
   const [projectId, setProjectId] = useState("all");
   const shown = filterReceiptTasks(receipts, query, projectId);

@@ -1,9 +1,10 @@
 "use server";
 
 import { and, eq } from "drizzle-orm";
-import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { projectFiles, projects, tasks } from "@/db/schema";
+import { toClientProjectFile } from "@/lib/dashboard-rows";
+import type { OptimisticProject, OptimisticProjectFile } from "@/lib/optimistic-rules";
 import { classifyProjectReference, isProjectLink as isLink, validateProjectInput } from "@/lib/project-rules";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,16 +25,18 @@ async function findOwnedProject(userId: string, projectId: string) {
   return project;
 }
 
-export async function createProject(name: string, color?: string): Promise<Result> {
+export async function createProject(name: string, color?: string): Promise<Result & { project?: OptimisticProject }> {
   const { user } = await requireUser();
   if (!user) return { error: "Not signed in." };
   try {
-    await db.insert(projects).values({ userId: user.id, ...validateProjectInput(name, color) });
+    const [project] = await db
+      .insert(projects)
+      .values({ userId: user.id, ...validateProjectInput(name, color) })
+      .returning({ id: projects.id, name: projects.name, color: projects.color });
+    return { project };
   } catch (e) {
     return { error: (e as Error).message };
   }
-  revalidatePath("/");
-  return {};
 }
 
 export async function deleteProject(projectId: string): Promise<Result> {
@@ -50,7 +53,6 @@ export async function deleteProject(projectId: string): Promise<Result> {
   // Tasks are also unset by the FK (on delete set null); done explicitly so it doesn't depend on that.
   await db.update(tasks).set({ projectId: null }).where(and(eq(tasks.projectId, projectId), eq(tasks.userId, user.id)));
   await db.delete(projects).where(and(eq(projects.id, projectId), eq(projects.userId, user.id))); // files cascade
-  revalidatePath("/");
   return {};
 }
 
@@ -65,12 +67,11 @@ export async function assignTaskToProject(taskId: string, projectId: string | nu
     .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)))
     .returning({ id: tasks.id });
   if (updated.length === 0) return { error: "Task not found." };
-  revalidatePath("/");
   return {};
 }
 
 // FormData field: file
-export async function uploadProjectFile(projectId: string, formData: FormData): Promise<Result> {
+export async function uploadProjectFile(projectId: string, formData: FormData): Promise<Result & { file?: OptimisticProjectFile }> {
   const { supabase, user } = await requireUser();
   if (!user) return { error: "Not signed in." };
   if (!(await findOwnedProject(user.id, projectId))) return { error: "Project not found." };
@@ -91,12 +92,12 @@ export async function uploadProjectFile(projectId: string, formData: FormData): 
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, { contentType: file.type || undefined });
   if (error) return { error: `Upload failed: ${error.message}` };
 
-  await db.insert(projectFiles).values({ projectId, fileName, fileUrl: path });
-  revalidatePath("/");
-  return {};
+  const [row] = await db.insert(projectFiles).values({ projectId, fileName, fileUrl: path }).returning();
+  const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600);
+  return { file: toClientProjectFile(row, signed?.signedUrl ?? null) };
 }
 
-export async function addProjectLink(projectId: string, title: string, url: string): Promise<Result> {
+export async function addProjectLink(projectId: string, title: string, url: string): Promise<Result & { file?: OptimisticProjectFile }> {
   const { user } = await requireUser();
   if (!user) return { error: "Not signed in." };
   if (!(await findOwnedProject(user.id, projectId))) return { error: "Project not found." };
@@ -104,12 +105,14 @@ export async function addProjectLink(projectId: string, title: string, url: stri
   try {
     const ref = classifyProjectReference({ url });
     if (ref.kind !== "link") throw new Error("Add a link.");
-    await db.insert(projectFiles).values({ projectId, fileName: title.trim() || ref.url, fileUrl: ref.url });
+    const [row] = await db
+      .insert(projectFiles)
+      .values({ projectId, fileName: title.trim() || ref.url, fileUrl: ref.url })
+      .returning();
+    return { file: toClientProjectFile(row, null) };
   } catch (e) {
     return { error: (e as Error).message };
   }
-  revalidatePath("/");
-  return {};
 }
 
 export async function deleteProjectFile(fileId: string): Promise<Result> {
@@ -128,6 +131,5 @@ export async function deleteProjectFile(fileId: string): Promise<Result> {
     if (error) return { error: `Could not remove file: ${error.message}` };
   }
   await db.delete(projectFiles).where(eq(projectFiles.id, fileId));
-  revalidatePath("/");
   return {};
 }

@@ -13,14 +13,17 @@ export function BrainDumpBar() {
     const sourceSubject = text.trim();
     if (!sourceSubject) return;
     setText(""); // ready for the next thought immediately
+    const tempId = crypto.randomUUID();
     run(
       // "requirement" mirrors the DB default for new items
-      { type: "triage/add", item: { id: crypto.randomUUID(), category: "requirement", sourceSubject, summary: null, suggestedAction: null } },
+      { type: "triage/add", item: { id: tempId, category: "requirement", sourceSubject, summary: null, suggestedAction: null } },
       async () => {
         const result = await dumpToTriage({ sourceSubject });
         if (result.error) setText((current) => current || sourceSubject); // don't lose the thought on failure
         return result;
       },
+      // swap the placeholder for the saved row so its id is real (dismiss / promote need it)
+      (result) => (result.item ? [{ type: "triage/upsert", item: result.item, replaces: tempId }] : []),
     );
   }
 

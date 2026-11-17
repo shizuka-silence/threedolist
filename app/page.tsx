@@ -9,7 +9,6 @@ import { BrainDumpBar } from "@/components/brain-dump-bar";
 import { DayCalendar } from "@/components/day-calendar";
 import { DashboardProvider } from "@/components/dashboard-provider";
 import { ReceiptLog } from "@/components/receipt-log";
-import { ProjectWorkspace } from "@/components/project-workspace";
 import { TaskBoard } from "@/components/task-board";
 import { EmailDumpBox } from "@/components/email-dump-box";
 import { TriageBadge, TriageList } from "@/components/triage-list";
@@ -17,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { db } from "@/db";
 import { projectFiles, projects, taskProofs, taskSubtasks, tasks, triageItems } from "@/db/schema";
 import { loadReceipts } from "@/app/receipts";
+import { toClientProjectFile, toClientTask } from "@/lib/dashboard-rows";
+import type { OptimisticState } from "@/lib/optimistic-rules";
 import { isProjectLink } from "@/lib/project-rules";
 import { createClient } from "@/lib/supabase/server";
 
@@ -41,108 +42,99 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
   // Table names written out on purpose: in a single-table select Drizzle drops the "tasks." prefix from
   // ${tasks.id}, which would make this subquery compare task_proofs.task_id to its own id.
   const proofCount = sql<number>`(select count(*)::int from task_proofs where task_proofs.task_id = tasks.id)`;
-  const rows = await db
-    .select({
-      id: tasks.id,
-      projectId: tasks.projectId,
-      title: tasks.title,
-      completionType: tasks.completionType,
-      estimatedMinutes: tasks.estimatedMinutes,
-      actualMinutes: tasks.actualMinutes,
-      activeTimerStartedAt: tasks.activeTimerStartedAt,
-      status: tasks.status,
-      scheduledStart: tasks.scheduledStart,
-      aiClarifyingQuestions: tasks.aiClarifyingQuestions,
-      proofCount,
-    })
-    .from(tasks)
-    .where(eq(tasks.userId, user.id))
-    .orderBy(desc(tasks.createdAt));
 
-  // Private bucket: sign image proof paths for 1 hour so thumbnails can render.
-  const imageProofs = await db
-    .select({ id: taskProofs.id, taskId: taskProofs.taskId, path: taskProofs.storagePathOrUrl })
-    .from(taskProofs)
-    .innerJoin(tasks, eq(tasks.id, taskProofs.taskId))
-    .where(and(eq(tasks.userId, user.id), eq(taskProofs.type, "image")));
-  // One batched call, skipped entirely when there is nothing to sign.
-  const { data: signed } = imageProofs.length
-    ? await supabase.storage.from("proof-uploads").createSignedUrls(imageProofs.map((p) => p.path), 3600)
+  // None of these queries needs another's result, so they run together instead of one after another.
+  const [rows, imageProofs, subtaskRows, pendingTriage, projectRows, fileRows, receipts] = await Promise.all([
+    db
+      .select({
+        id: tasks.id,
+        projectId: tasks.projectId,
+        title: tasks.title,
+        completionType: tasks.completionType,
+        estimatedMinutes: tasks.estimatedMinutes,
+        actualMinutes: tasks.actualMinutes,
+        activeTimerStartedAt: tasks.activeTimerStartedAt,
+        status: tasks.status,
+        scheduledStart: tasks.scheduledStart,
+        aiClarifyingQuestions: tasks.aiClarifyingQuestions,
+        proofCount,
+      })
+      .from(tasks)
+      .where(eq(tasks.userId, user.id))
+      .orderBy(desc(tasks.createdAt)),
+    db
+      .select({ id: taskProofs.id, taskId: taskProofs.taskId, path: taskProofs.storagePathOrUrl })
+      .from(taskProofs)
+      .innerJoin(tasks, eq(tasks.id, taskProofs.taskId))
+      .where(and(eq(tasks.userId, user.id), eq(taskProofs.type, "image"))),
+    db
+      .select({
+        id: taskSubtasks.id,
+        taskId: taskSubtasks.taskId,
+        label: taskSubtasks.label,
+        isCompleted: taskSubtasks.isCompleted,
+        source: taskSubtasks.source,
+      })
+      .from(taskSubtasks)
+      .innerJoin(tasks, eq(tasks.id, taskSubtasks.taskId))
+      .where(eq(tasks.userId, user.id)),
+    db
+      .select({
+        id: triageItems.id,
+        sourceSubject: triageItems.sourceSubject,
+        summary: triageItems.summary,
+        suggestedAction: triageItems.suggestedAction,
+        category: triageItems.category,
+      })
+      .from(triageItems)
+      .where(and(eq(triageItems.userId, user.id), eq(triageItems.status, "pending")))
+      .orderBy(desc(triageItems.createdAt)),
+    db
+      .select({ id: projects.id, name: projects.name, color: projects.color })
+      .from(projects)
+      .where(eq(projects.userId, user.id))
+      .orderBy(projects.createdAt),
+    db
+      .select({ id: projectFiles.id, projectId: projectFiles.projectId, fileName: projectFiles.fileName, fileUrl: projectFiles.fileUrl })
+      .from(projectFiles)
+      .innerJoin(projects, eq(projects.id, projectFiles.projectId))
+      .where(eq(projects.userId, user.id))
+      .orderBy(projectFiles.createdAt),
+    showReceipts ? loadReceipts(supabase, user.id) : Promise.resolve([]),
+  ]);
+
+  // Private bucket: one batched call signs image proofs and uploaded project files for 1 hour.
+  // Skipped entirely when there is nothing to sign.
+  const storedFiles = fileRows.filter((f) => !isProjectLink(f.fileUrl));
+  const paths = [...imageProofs.map((p) => p.path), ...storedFiles.map((f) => f.fileUrl)];
+  const { data: signed } = paths.length
+    ? await supabase.storage.from("proof-uploads").createSignedUrls(paths, 3600)
     : { data: null };
+
   const thumbnailsByTask = new Map<string, { id: string; url: string }[]>();
   imageProofs.forEach((p, i) => {
     const url = signed?.[i]?.signedUrl;
     if (url) thumbnailsByTask.set(p.taskId, [...(thumbnailsByTask.get(p.taskId) ?? []), { id: p.id, url }]);
   });
+  const signedFileUrl = new Map(storedFiles.map((f, i) => [f.fileUrl, signed?.[imageProofs.length + i]?.signedUrl ?? null]));
 
-  const subtaskRows = await db
-    .select({
-      id: taskSubtasks.id,
-      taskId: taskSubtasks.taskId,
-      label: taskSubtasks.label,
-      isCompleted: taskSubtasks.isCompleted,
-      source: taskSubtasks.source,
-    })
-    .from(taskSubtasks)
-    .innerJoin(tasks, eq(tasks.id, taskSubtasks.taskId))
-    .where(eq(tasks.userId, user.id));
-
-  const pendingTriage = await db
-    .select({
-      id: triageItems.id,
-      sourceSubject: triageItems.sourceSubject,
-      summary: triageItems.summary,
-      suggestedAction: triageItems.suggestedAction,
-      category: triageItems.category,
-    })
-    .from(triageItems)
-    .where(and(eq(triageItems.userId, user.id), eq(triageItems.status, "pending")))
-    .orderBy(desc(triageItems.createdAt));
-
-  const projectRows = await db
-    .select({ id: projects.id, name: projects.name, color: projects.color })
-    .from(projects)
-    .where(eq(projects.userId, user.id))
-    .orderBy(projects.createdAt);
-
-  const receipts = showReceipts ? await loadReceipts(supabase, user.id) : [];
-
-  const active = rows.filter((t) => t.status !== "completed");
-
-  // Unknown ids (deleted project, hand-edited URL) fall back to "all".
-  const selected =
-    projectParam === "unassigned" || projectRows.some((p) => p.id === projectParam) ? projectParam! : "all";
-  const selectedProject = projectRows.find((p) => p.id === selected);
-
-  const optimisticTasks = active.map((t) => ({
-    ...t,
-    status: t.status,
-    activeTimerStartedAt: t.activeTimerStartedAt?.toISOString() ?? null,
-    scheduledStart: t.scheduledStart?.toISOString() ?? null,
-    thumbnails: thumbnailsByTask.get(t.id) ?? [],
-    subtasks: subtaskRows.filter((s) => s.taskId === t.id),
-  }));
-
-  let workspaceFiles: { id: string; fileName: string; href: string | null; isLink: boolean }[] = [];
-  if (selectedProject) {
-    const files = await db
-      .select({ id: projectFiles.id, fileName: projectFiles.fileName, fileUrl: projectFiles.fileUrl })
-      .from(projectFiles)
-      .where(eq(projectFiles.projectId, selectedProject.id))
-      .orderBy(projectFiles.createdAt);
-    const storagePaths = files.filter((f) => !isProjectLink(f.fileUrl)).map((f) => f.fileUrl);
-    const { data: signedFiles } = storagePaths.length
-      ? await supabase.storage.from("proof-uploads").createSignedUrls(storagePaths, 3600)
-      : { data: null };
-    workspaceFiles = files.map((f) => {
-      const link = isProjectLink(f.fileUrl);
-      const href = link ? f.fileUrl : signedFiles?.find((s) => s.path === f.fileUrl)?.signedUrl ?? null;
-      return { id: f.id, fileName: f.fileName, href, isLink: link };
-    });
-  }
+  const initial: OptimisticState = {
+    triage: pendingTriage,
+    projects: projectRows,
+    projectFiles: fileRows.map((f) => toClientProjectFile(f, signedFileUrl.get(f.fileUrl) ?? null)),
+    tasks: rows
+      .filter((t) => t.status !== "completed")
+      .map((t) =>
+        toClientTask(t, {
+          proofCount: t.proofCount,
+          thumbnails: thumbnailsByTask.get(t.id) ?? [],
+          subtasks: subtaskRows.filter((s) => s.taskId === t.id),
+        }),
+      ),
+  };
 
   return (
-    <DashboardProvider triage={pendingTriage} tasks={optimisticTasks}>
+    <DashboardProvider initial={initial}>
     <main className="mx-auto flex w-full max-w-xl flex-col gap-6 p-4">
       <header className="flex items-center justify-between gap-2">
         <div className="min-w-0">
@@ -166,7 +158,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
       {showCalendar ? (
         <DayCalendar />
       ) : showReceipts ? (
-        <ReceiptLog receipts={receipts} projects={projectRows} />
+        <ReceiptLog receipts={receipts} />
       ) : showTriage ? (
         <>
           <EmailDumpBox canSyncGmail={Boolean(process.env.GMAIL_SYNC_WEBHOOK_URL)} />
@@ -175,18 +167,8 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
         </>
       ) : (
         <>
-      <AddTaskForm />
-
-      <TaskBoard
-        selected={selected}
-        projects={projectRows}
-        workspace={
-          selectedProject && (
-            <ProjectWorkspace projectId={selectedProject.id} name={selectedProject.name} files={workspaceFiles} />
-          )
-        }
-      />
-
+          <AddTaskForm />
+          <TaskBoard selectedParam={projectParam} />
         </>
       )}
     </main>
