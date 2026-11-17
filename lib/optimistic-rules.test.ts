@@ -13,6 +13,8 @@ const item = (id: string, category: "announcement" | "requirement" | "opportunit
 const state = (over: Partial<OptimisticState> = {}): OptimisticState => ({
   triage: [item("a"), item("b")],
   tasks: [task({ id: "t1" }), task({ id: "t2", projectId: "p1" })],
+  projects: [{ id: "p1", name: "Taxes", color: "#111111" }],
+  projectFiles: [{ id: "f1", projectId: "p1", fileName: "W2.pdf", href: "https://x/w2", isLink: false }],
   ...over,
 });
 
@@ -106,6 +108,107 @@ describe("task changes", () => {
     const snapshot = structuredClone(s);
     applyOptimisticChange(s, { type: "task/complete", id: "t1" });
     applyOptimisticChange(s, { type: "triage/remove", id: "a" });
+    expect(s).toEqual(snapshot);
+  });
+});
+
+describe("server-returned rows (upsert)", () => {
+  it("task/upsert inserts a new task at the top", () => {
+    const next = applyOptimisticChange(state(), { type: "task/upsert", task: task({ id: "new" }) });
+    expect(next.tasks.map((t) => t.id)).toEqual(["new", "t1", "t2"]);
+  });
+
+  it("task/upsert replaces an existing task with the same id in place", () => {
+    const next = applyOptimisticChange(state(), { type: "task/upsert", task: task({ id: "t2", title: "Renamed" }) });
+    expect(next.tasks.map((t) => [t.id, t.title])).toEqual([["t1", "Write report"], ["t2", "Renamed"]]);
+  });
+
+  it("task/upsert swaps a temp id for the real row when `replaces` is given", () => {
+    const s = state({ tasks: [task({ id: "tmp" }), task({ id: "t2" })] });
+    const next = applyOptimisticChange(s, { type: "task/upsert", task: task({ id: "real" }), replaces: "tmp" });
+    expect(next.tasks.map((t) => t.id)).toEqual(["real", "t2"]);
+  });
+
+  it("triage/upsert inserts first, or swaps a temp id", () => {
+    const added = applyOptimisticChange(state(), { type: "triage/upsert", item: item("new") });
+    expect(added.triage.map((i) => i.id)).toEqual(["new", "a", "b"]);
+    const swapped = applyOptimisticChange(added, { type: "triage/upsert", item: item("real"), replaces: "new" });
+    expect(swapped.triage.map((i) => i.id)).toEqual(["real", "a", "b"]);
+  });
+
+  it("project/upsert and file/upsert append new rows", () => {
+    const withProject = applyOptimisticChange(state(), { type: "project/upsert", project: { id: "p2", name: "Gym", color: "#222222" } });
+    expect(withProject.projects.map((p) => p.id)).toEqual(["p1", "p2"]);
+    const file = { id: "f2", projectId: "p1", fileName: "Docs", href: "https://x/docs", isLink: true };
+    const withFile = applyOptimisticChange(state(), { type: "file/upsert", file });
+    expect(withFile.projectFiles.map((f) => f.id)).toEqual(["f1", "f2"]);
+  });
+});
+
+describe("removals", () => {
+  it("task/remove drops the task (delete)", () => {
+    const next = applyOptimisticChange(state(), { type: "task/remove", id: "t1" });
+    expect(next.tasks.map((t) => t.id)).toEqual(["t2"]);
+  });
+
+  it("project/remove drops the project and its files, and un-assigns its tasks", () => {
+    const next = applyOptimisticChange(state(), { type: "project/remove", id: "p1" });
+    expect(next.projects).toEqual([]);
+    expect(next.projectFiles).toEqual([]);
+    expect(next.tasks.map((t) => t.projectId)).toEqual([null, null]);
+  });
+
+  it("file/remove drops only that file", () => {
+    const next = applyOptimisticChange(state(), { type: "file/remove", id: "f1" });
+    expect(next.projectFiles).toEqual([]);
+    expect(next.projects).toHaveLength(1);
+  });
+});
+
+describe("timer, proof and AI prep", () => {
+  it("startTimer sets the start time", () => {
+    const next = applyOptimisticChange(state(), { type: "task/startTimer", id: "t1", at: "2026-11-17T10:00:00.000Z" });
+    expect(next.tasks[0].activeTimerStartedAt).toBe("2026-11-17T10:00:00.000Z");
+  });
+
+  it("stopTimer adds the logged minutes and clears the start time", () => {
+    const s = state({ tasks: [task({ id: "t1", actualMinutes: 10, activeTimerStartedAt: "2026-11-17T10:00:00.000Z" })] });
+    const next = applyOptimisticChange(s, { type: "task/stopTimer", id: "t1", minutes: 25 });
+    expect(next.tasks[0]).toMatchObject({ actualMinutes: 35, activeTimerStartedAt: null });
+  });
+
+  it("addProof bumps proofCount and appends a thumbnail only when given one", () => {
+    const withThumb = applyOptimisticChange(state(), { type: "task/addProof", id: "t1", thumbnail: { id: "pr1", url: "https://x/1" } });
+    expect(withThumb.tasks[0]).toMatchObject({ proofCount: 1, thumbnails: [{ id: "pr1", url: "https://x/1" }] });
+    const noThumb = applyOptimisticChange(withThumb, { type: "task/addProof", id: "t1" });
+    expect(noThumb.tasks[0]).toMatchObject({ proofCount: 2 });
+    expect(noThumb.tasks[0].thumbnails).toHaveLength(1);
+  });
+
+  it("setPrep fills an empty estimate, never overwrites a manual one", () => {
+    const prep = { type: "task/setPrep" as const, id: "t1", estimatedMinutes: 30, questions: ["Who signs?"], pitfalls: [] };
+    expect(applyOptimisticChange(state(), prep).tasks[0].estimatedMinutes).toBe(30);
+    const manual = state({ tasks: [task({ id: "t1", estimatedMinutes: 90 })] });
+    expect(applyOptimisticChange(manual, prep).tasks[0].estimatedMinutes).toBe(90);
+  });
+
+  it("setPrep sets the questions and replaces old AI pitfalls but keeps user subtasks", () => {
+    const user = { id: "s1", label: "Mine", isCompleted: false, source: "user" as const };
+    const oldPitfall = { id: "s2", label: "Old trap", isCompleted: false, source: "ai_pitfall" as const };
+    const newPitfall = { id: "s3", label: "New trap", isCompleted: false, source: "ai_pitfall" as const };
+    const s = state({ tasks: [task({ id: "t1", subtasks: [user, oldPitfall] })] });
+    const next = applyOptimisticChange(s, { type: "task/setPrep", id: "t1", estimatedMinutes: null, questions: ["Q1", "Q2"], pitfalls: [newPitfall] });
+    expect(next.tasks[0].aiClarifyingQuestions).toEqual(["Q1", "Q2"]);
+    expect(next.tasks[0].subtasks.map((x) => x.id)).toEqual(["s1", "s3"]);
+  });
+
+  it("new changes ignore unknown ids and do not mutate state", () => {
+    const s = state();
+    const snapshot = structuredClone(s);
+    expect(applyOptimisticChange(s, { type: "task/startTimer", id: "missing", at: "x" })).toEqual(s);
+    expect(applyOptimisticChange(s, { type: "task/remove", id: "missing" })).toEqual(s);
+    applyOptimisticChange(s, { type: "project/remove", id: "p1" });
+    applyOptimisticChange(s, { type: "task/upsert", task: task({ id: "new" }) });
     expect(s).toEqual(snapshot);
   });
 });
