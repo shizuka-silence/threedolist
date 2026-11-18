@@ -5,6 +5,8 @@ import { useState } from "react";
 import { uncompleteTask, updateTaskReflection } from "@/app/actions/tasks";
 import type { Receipt } from "@/app/receipts";
 import { useDashboard } from "@/components/dashboard-provider";
+import { Pagination } from "@/components/pagination";
+import { paginate } from "@/lib/pagination";
 import { filterReceiptTasks, formatReceiptVariance } from "@/lib/receipt-rules";
 
 const pill = (on: boolean) =>
@@ -27,7 +29,8 @@ export function ReceiptLog({ receipts: serverReceipts }: { receipts: Receipt[] }
   const receipts = [...justCompleted, ...serverReceipts];
   const [query, setQuery] = useState("");
   const [projectId, setProjectId] = useState("all");
-  const shown = filterReceiptTasks(receipts, query, projectId);
+  const [page, setPage] = useState(1);
+  const { items: shown, page: currentPage, pageCount } = paginate(filterReceiptTasks(receipts, query, projectId), page);
   const latestId = receipts[0]?.id; // newest of the unfiltered list, so searching never makes another row look like the latest
 
   // Full reload: the reopened task needs its proofs, subtasks and signed thumbnails, which only the server page builds.
@@ -41,20 +44,20 @@ export function ReceiptLog({ receipts: serverReceipts }: { receipts: Receipt[] }
     <div className="flex flex-col gap-3">
       <input
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={(e) => { setQuery(e.target.value); setPage(1); }}
         placeholder="Search finished tasks, notes, projects"
         aria-label="Search receipts"
         className="h-10 rounded-md border bg-background px-3 text-base"
       />
       <div className="flex gap-2 overflow-x-auto pb-1">
-        <button type="button" className={pill(projectId === "all")} onClick={() => setProjectId("all")}>
+        <button type="button" className={pill(projectId === "all")} onClick={() => { setProjectId("all"); setPage(1); }}>
           All <span className="opacity-70">{receipts.length}</span>
         </button>
-        <button type="button" className={pill(projectId === "unassigned")} onClick={() => setProjectId("unassigned")}>
+        <button type="button" className={pill(projectId === "unassigned")} onClick={() => { setProjectId("unassigned"); setPage(1); }}>
           Unassigned <span className="opacity-70">{receipts.filter((r) => !r.projectId).length}</span>
         </button>
         {projects.map((p) => (
-          <button key={p.id} type="button" className={pill(projectId === p.id)} onClick={() => setProjectId(p.id)}>
+          <button key={p.id} type="button" className={pill(projectId === p.id)} onClick={() => { setProjectId(p.id); setPage(1); }}>
             <span className="h-3 w-3 rounded-full" style={{ backgroundColor: p.color }} />
             {p.name} <span className="opacity-70">{receipts.filter((r) => r.projectId === p.id).length}</span>
           </button>
@@ -98,6 +101,7 @@ export function ReceiptLog({ receipts: serverReceipts }: { receipts: Receipt[] }
         ))}
         {shown.length === 0 && <p className="text-muted-foreground">No receipts match.</p>}
       </ul>
+      <Pagination page={currentPage} pageCount={pageCount} onPage={setPage} />
     </div>
   );
 }

@@ -7,7 +7,9 @@ import { DraggableTask } from "@/components/draggable-task";
 import { ProjectDnd } from "@/components/project-dnd";
 import { ProjectStrip } from "@/components/project-strip";
 import { ProjectWorkspace } from "@/components/project-workspace";
+import { Pagination } from "@/components/pagination";
 import { TaskCard } from "@/components/task-card";
+import { paginate } from "@/lib/pagination";
 import { filterTasksByProject } from "@/lib/project-rules";
 
 // Folder counts and the visible list are derived from dashboard state, so they move together with any change.
@@ -17,7 +19,10 @@ export function TaskBoard({ selectedParam, onSelectProject }: { selectedParam?: 
   const selectedProject = state.projects.find((p) => p.id === selectedParam);
   // Unknown ids (deleted project, hand-edited URL) fall back to "all".
   const selected = selectedParam === "unassigned" || selectedProject ? selectedParam! : "all";
-  const visible = filterTasksByProject(state.tasks, selected);
+  const [page, setPage] = useState(1);
+  const [pageFor, setPageFor] = useState(selected);
+  if (pageFor !== selected) { setPageFor(selected); setPage(1); } // new folder starts at page 1
+  const { items: visible, page: currentPage, pageCount } = paginate(filterTasksByProject(state.tasks, selected), page);
 
   return (
     <ProjectDnd>
@@ -41,6 +46,7 @@ export function TaskBoard({ selectedParam, onSelectProject }: { selectedParam?: 
         ))}
         {visible.length === 0 && <p className="text-muted-foreground">Nothing to do here. Add a task above.</p>}
       </ul>
+      <Pagination page={currentPage} pageCount={pageCount} onPage={setPage} />
     </ProjectDnd>
   );
 }
