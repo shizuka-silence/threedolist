@@ -75,7 +75,9 @@ export const triageItems = pgTable("triage_items", {
   sourceSubject: text("source_subject").notNull(),
   summary: text("summary"),
   suggestedAction: text("suggested_action"),
+  sourceBody: text("source_body"), // webhook email text for "Show full email"; wiped on dismiss/promote
   sourceUrl: text("source_url"), // link back to the original email, when the sender supplied one
+  deadline: ts("deadline"), // read from the email by the AI; copied to the task on promote
   category: text("category", { enum: ["announcement", "requirement", "opportunity", "reply"] }).notNull().default("requirement"),
   status: text("status", { enum: ["pending", "promoted", "dismissed"] }).notNull().default("pending"),
   createdAt: createdAt(),

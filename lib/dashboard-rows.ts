@@ -1,4 +1,4 @@
-import type { OptimisticProjectFile, OptimisticSubtask, OptimisticTask } from "@/lib/optimistic-rules";
+import type { OptimisticProjectFile, OptimisticSubtask, OptimisticTask, OptimisticTriageItem } from "@/lib/optimistic-rules";
 import { isProjectLink } from "./project-rules";
 
 // DB row -> client state shape (Dates become ISO strings). Shared by app/page.tsx and the Server Actions
@@ -46,6 +46,10 @@ export function toClientTask(
     thumbnails: extra.thumbnails ?? [],
     subtasks: extra.subtasks ?? [],
   };
+}
+
+export function toClientTriageItem(row: Omit<OptimisticTriageItem, "deadline"> & { deadline: Date | null }): OptimisticTriageItem {
+  return { ...row, deadline: row.deadline?.toISOString() ?? null };
 }
 
 // Clients pick the id of rows they create so the UI can show them before the save returns.

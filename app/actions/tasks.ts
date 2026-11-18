@@ -7,7 +7,7 @@ import { generateTaskPrep } from "@/lib/ai";
 import { isUuid, toClientTask } from "@/lib/dashboard-rows";
 import type { OptimisticSubtask, OptimisticTask, TaskSchedule } from "@/lib/optimistic-rules";
 import {
-  assertCanComplete, assertValidLoggedMinutes, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate, type AiPrepParts,
+  assertCanComplete, assertValidLoggedMinutes, calculateLoggedMinutes, normalizeAiPrepOutput, normalizeTaskTitle, resolveAiEstimate, type AiPrepParts,
 } from "@/lib/task-rules";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { assertCanDeleteTask } from "@/lib/receipt-rules";
@@ -275,6 +275,25 @@ export async function deleteTask(taskId: string): Promise<Result> {
     if (error) return { error: `Could not remove proof images: ${error.message}` };
   }
   await db.delete(tasks).where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id))); // proofs cascade
+  return {};
+}
+
+export async function updateTaskTitle(taskId: string, rawTitle: string): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+  let title: string;
+  try {
+    title = normalizeTaskTitle(rawTitle);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+
+  const updated = await db
+    .update(tasks)
+    .set({ title })
+    .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)))
+    .returning({ id: tasks.id });
+  if (updated.length === 0) return { error: "Task not found." };
   return {};
 }
 

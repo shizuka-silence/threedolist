@@ -9,6 +9,8 @@ export type OptimisticTriageItem = {
   summary: string | null;
   suggestedAction: string | null;
   sourceUrl?: string | null;
+  deadline?: string | null; // ISO
+  sourceBody?: string | null;
 };
 
 export type OptimisticSubtask = { id: string; label: string; isCompleted: boolean; source: "user" | "ai_pitfall" };
@@ -60,6 +62,7 @@ export type OptimisticChange =
   | { type: "task/complete"; id: string; at?: string }
   | { type: "task/assign"; id: string; projectId: string | null }
   | { type: "task/setEstimate"; id: string; minutes: number | null }
+  | { type: "task/rename"; id: string; title: string }
   | { type: "task/setSchedule"; id: string; schedule: TaskSchedule }
   | { type: "task/schedule"; id: string; start: string }
   | { type: "task/unschedule"; id: string }
@@ -85,10 +88,10 @@ function upsertFirst<T extends { id: string }>(list: T[], row: T, replaces?: str
   return list.map((x, i) => (i === at ? row : x));
 }
 
-export function buildOptimisticTask(id: string, title: string, completionType: "tick" | "proof"): OptimisticTask {
+export function buildOptimisticTask(id: string, title: string, completionType: "tick" | "proof", deadline: string | null = null): OptimisticTask {
   return {
     id, title, completionType, projectId: null, estimatedMinutes: null, actualMinutes: 0, activeTimerStartedAt: null,
-    status: "todo", scheduledStart: null, aiClarifyingQuestions: null, deadline: null, repeatEvery: null, repeatWeekdays: null, repeatUnit: null,
+    status: "todo", scheduledStart: null, aiClarifyingQuestions: null, deadline, repeatEvery: null, repeatWeekdays: null, repeatUnit: null,
     repeatUntil: null, proofCount: 0, thumbnails: [], subtasks: [],
   };
 }
@@ -128,6 +131,8 @@ export function applyOptimisticChange(state: OptimisticState, change: Optimistic
       return editTask(change.id, (t) => ({ ...t, projectId: change.projectId }));
     case "task/setEstimate":
       return editTask(change.id, (t) => ({ ...t, estimatedMinutes: change.minutes }));
+    case "task/rename":
+      return editTask(change.id, (t) => ({ ...t, title: change.title }));
     case "task/setSchedule":
       return editTask(change.id, (t) => ({ ...t, ...change.schedule }));
     case "task/schedule":

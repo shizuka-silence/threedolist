@@ -23,6 +23,13 @@ export function assertValidLoggedMinutes(minutes: number): void {
   }
 }
 
+/** Rename: trimmed, 1 to 200 characters. */
+export function normalizeTaskTitle(raw: string): string {
+  const title = raw.trim();
+  if (!title || title.length > 200) throw new Error("Title must be 1 to 200 characters.");
+  return title;
+}
+
 /** AI only fills an empty estimate; any user-entered value (even 0) is kept. */
 export function resolveAiEstimate(currentEstimate: number | null, aiEstimate: number): number {
   return currentEstimate ?? aiEstimate;

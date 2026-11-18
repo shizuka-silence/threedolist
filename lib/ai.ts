@@ -38,15 +38,20 @@ export async function parseEmailBatchToTriageItems(batchText: string) {
         sourceSubject: z.string().describe("Short title for this item"),
         summary: z.string().describe("One or two sentences, including any deadline"),
         suggestedAction: z.string().describe("Concrete next step, e.g. 'Reply Yes/No to Sam'"),
+        deadlineDate: z.string().nullable().describe("Due date as YYYY-MM-DD, or null if the email gives no deadline"),
+        deadlineTime: z.string().nullable().describe("Due time as 24-hour HH:mm, or null if the email gives a date but no time"),
       }),
     ),
   });
   const openai = createOpenAI({ apiKey: process.env.LLM_API_KEY, baseURL: process.env.LLM_BASE_URL });
+  const ph = new Date(Date.now() + 8 * 3_600_000); // shifted so the UTC getters read as UTC+8 wall time
+  const today = `${ph.toISOString().slice(0, 16).replace("T", " ")}, ${ph.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" })}`;
   const { object } = await generateObject({
     model: openai.chat(process.env.LLM_MODEL!),
     schema,
     prompt: `Sort this batch of emails (or pasted email dump) into triage items.
 Merge follow-ups and corrections about the same topic into ONE item that reflects the latest information.
+Today is ${today} (UTC+8, Philippines); resolve relative dates like "Friday" against it.
 Categories: announcement (FYI, nothing to do), requirement (a task or deadline I must meet), opportunity (optional event/offer I may want to RSVP to), reply (someone is waiting for my answer).
 
 ${batchText}`,

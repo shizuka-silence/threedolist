@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { dismissTriageItem, promoteTriageItem } from "@/app/actions/triage";
 import { useDashboard } from "@/components/dashboard-provider";
+import { formatDeadline } from "@/lib/deadline";
 import { Button } from "@/components/ui/button";
 import { buildOptimisticTask } from "@/lib/optimistic-rules";
 import { buildPromotionTaskPayload, TRIAGE_CATEGORIES, type TriageCategory } from "@/lib/triage-rules";
@@ -14,6 +15,8 @@ type Props = {
   summary: string | null;
   suggestedAction: string | null;
   sourceUrl?: string | null;
+  deadline?: string | null; // ISO
+  sourceBody?: string | null;
   onReclassify: (id: string, category: TriageCategory) => void;
 };
 
@@ -46,7 +49,7 @@ const CATEGORY_BADGE: Record<TriageCategory, string> = {
   announcement: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
 };
 
-export function TriageCard({ id, category, sourceSubject, summary, suggestedAction, sourceUrl, onReclassify }: Props) {
+export function TriageCard({ id, category, sourceSubject, summary, suggestedAction, sourceUrl, deadline, sourceBody, onReclassify }: Props) {
   const defaults = buildPromotionTaskPayload({ category, sourceSubject, summary, suggestedAction });
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(defaults.title);
@@ -55,7 +58,7 @@ export function TriageCard({ id, category, sourceSubject, summary, suggestedActi
 
   // The card disappears at once; a failure restores it and the dashboard banner explains why.
   function promote(overrides?: { title: string; completionType: "tick" | "proof" }) {
-    const task = buildOptimisticTask(crypto.randomUUID(), overrides?.title.trim() || defaults.title, overrides?.completionType ?? defaults.completionType);
+    const task = buildOptimisticTask(crypto.randomUUID(), overrides?.title.trim() || defaults.title, overrides?.completionType ?? defaults.completionType, deadline ?? null);
     run(
       { type: "triage/promote", id, task },
       () => promoteTriageItem(id, { ...overrides, taskId: task.id }),
@@ -71,10 +74,18 @@ export function TriageCard({ id, category, sourceSubject, summary, suggestedActi
       <p className="font-medium">{sourceSubject}</p>
       {summary && <p className="truncate font-mono text-xs text-zinc-400">{summary}</p>}
       {suggestedAction && <p className="text-sm">Suggested: {suggestedAction}</p>}
+      {deadline && <p className="text-sm text-amber-300" suppressHydrationWarning>Due {formatDeadline(deadline)}</p>}
       {sourceUrl && (
         <a href={sourceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-sky-400 underline underline-offset-2">
           Open email ↗
         </a>
+      )}
+
+      {sourceBody && (
+        <details className="text-sm">
+          <summary className="cursor-pointer text-zinc-400">Show full email</summary>
+          <p className="mt-1 max-h-64 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs text-zinc-300">{sourceBody}</p>
+        </details>
       )}
 
       <div role="group" aria-label="Category" className="flex flex-wrap gap-1">

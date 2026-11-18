@@ -4,11 +4,12 @@ import imageCompression from "browser-image-compression";
 import { useEffect, useRef, useState } from "react";
 import {
   addSubtask, addTaskProof, completeTask, deleteTask, runAiTaskPrep, startTaskTimer, stopTaskTimer, toggleSubtask,
-  logTaskMinutes, updateTaskEstimate, updateTaskSchedule,
+  logTaskMinutes, updateTaskEstimate, updateTaskSchedule, updateTaskTitle,
 } from "@/app/actions/tasks";
 import { assignTaskToProject } from "@/app/actions/projects";
 import { useDashboard } from "@/components/dashboard-provider";
 import { Button } from "@/components/ui/button";
+import { formatDeadline, fromDatetimeLocal, isOverdue, toDatetimeLocal } from "@/lib/deadline";
 import type { TaskSchedule } from "@/lib/optimistic-rules";
 import { calculateLoggedMinutes } from "@/lib/task-rules";
 
@@ -160,9 +161,9 @@ export function TaskCard({
     const schedule: TaskSchedule = { deadline, repeatEvery, repeatWeekdays, repeatUnit, repeatUntil, ...patch };
     run({ type: "task/setSchedule", id, schedule }, () => updateTaskSchedule(id, schedule));
   };
-  const toIso = (date: string) => (date ? `${date}T00:00:00.000Z` : null);
-  const today = new Date().toISOString().slice(0, 10);
-  const overdue = deadline !== null && deadline.slice(0, 10) < today;
+  // "Repeat until" is a whole day, so it runs to the end of that day (a deadline with a time still counts on the last day).
+  const endOfDayIso = (date: string) => (date ? `${date}T23:59:59.999Z` : null);
+  const overdue = isOverdue(deadline, Date.now());
   const project = projects.find((p) => p.id === projectId);
   const completeNow = () =>
     run({ type: "task/complete", id, at: new Date().toISOString() }, () => completeTask(id), (r) =>
@@ -220,7 +221,7 @@ export function TaskCard({
                 {project.name}
               </span>
             )}
-            {deadline && <span className={overdue ? "font-medium text-red-400" : ""}>Due {deadline.slice(0, 10)}</span>}
+            {deadline && <span className={overdue ? "font-medium text-red-400" : ""} suppressHydrationWarning>Due {formatDeadline(deadline)}</span>}
             {repeatWeekdays?.length ? (
               <span>↻ {repeatWeekdays.map((n) => DAY_NAMES[n]).join(", ")}</span>
             ) : repeatEvery ? (
@@ -273,8 +274,22 @@ export function TaskCard({
 
       {expanded && (
         <>
-          {/* 1. Where it lives and when it's due */}
+          {/* 1. Name, where it lives and when it's due */}
           <div className="flex flex-col gap-2">
+            <input
+              // key remounts the field if the title changes from elsewhere (e.g. a failed rename rolling back)
+              key={title}
+              defaultValue={title}
+              aria-label="Task title"
+              maxLength={200}
+              onBlur={(e) => {
+                const next = e.target.value.trim();
+                if (!next) e.target.value = title; // an empty title is never saved
+                else if (next !== title) run({ type: "task/rename", id, title: next }, () => updateTaskTitle(id, next));
+              }}
+              onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+              className={`${fieldClass} font-medium`}
+            />
             <select
               value={projectId ?? ""}
               aria-label="Project folder"
@@ -291,9 +306,9 @@ export function TaskCard({
             <label className="flex items-center gap-2 text-sm">
               Deadline
               <input
-                type="date"
-                value={deadline?.slice(0, 10) ?? ""}
-                onChange={(e) => scheduleChange({ deadline: toIso(e.target.value) })}
+                type="datetime-local"
+                value={toDatetimeLocal(deadline)}
+                onChange={(e) => scheduleChange({ deadline: fromDatetimeLocal(e.target.value) })}
                 className={fieldClass}
               />
             </label>
@@ -376,7 +391,7 @@ export function TaskCard({
                 <input
                   type="date"
                   value={repeatUntil?.slice(0, 10) ?? ""}
-                  onChange={(e) => scheduleChange({ repeatUntil: toIso(e.target.value) })}
+                  onChange={(e) => scheduleChange({ repeatUntil: endOfDayIso(e.target.value) })}
                   className={fieldClass}
                 />
               </label>

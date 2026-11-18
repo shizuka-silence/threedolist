@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { tasks, triageItems } from "@/db/schema";
 import { parseEmailBatchToTriageItems } from "@/lib/ai";
-import { isUuid, toClientTask } from "@/lib/dashboard-rows";
+import { isUuid, toClientTask, toClientTriageItem } from "@/lib/dashboard-rows";
 import type { OptimisticTask, OptimisticTriageItem } from "@/lib/optimistic-rules";
 import { createClient } from "@/lib/supabase/server";
 import { buildPromotionTaskPayload, formatEmailBatchForAi, normalizeParsedTriageItems, parseTriageCategory, type NormalizedTriageItem } from "@/lib/triage-rules";
@@ -21,6 +21,8 @@ const triageClientColumns = {
   summary: triageItems.summary,
   suggestedAction: triageItems.suggestedAction,
   sourceUrl: triageItems.sourceUrl,
+  deadline: triageItems.deadline,
+  sourceBody: triageItems.sourceBody,
 };
 
 async function requireUser() {
@@ -54,7 +56,7 @@ export async function dumpToTriage(input: {
       status: "pending",
     })
     .returning(triageClientColumns);
-  return { item };
+  return { item: toClientTriageItem(item) };
 }
 
 // Task defaults come from the item's category (buildPromotionTaskPayload); the caller may override title / type.
@@ -82,7 +84,7 @@ export async function promoteTriageItem(
     // Only a pending item can be promoted, so a double-click can't create two tasks.
     const [claimed] = await tx
       .update(triageItems)
-      .set({ status: "promoted" })
+      .set({ status: "promoted", sourceBody: null })
       .where(and(eq(triageItems.id, itemId), eq(triageItems.userId, user.id), eq(triageItems.status, "pending")))
       .returning({ id: triageItems.id });
     if (!claimed) return null;
@@ -94,6 +96,7 @@ export async function promoteTriageItem(
         title,
         completionType: overrides.completionType ?? defaults.completionType,
         notes: defaults.notes || null,
+        deadline: defaults.deadline,
       })
       .returning();
     return created;
@@ -123,7 +126,7 @@ export async function ingestEmailDump(rawText: string): Promise<Result & { items
     .insert(triageItems)
     .values(items.map((item) => ({ ...item, userId: user.id })))
     .returning(triageClientColumns);
-  return { items: inserted };
+  return { items: inserted.map(toClientTriageItem) };
 }
 
 // Optional: pokes the Apps Script web app, which then POSTs its emails to /api/triage.
@@ -169,7 +172,7 @@ export async function dismissTriageItem(itemId: string): Promise<Result> {
 
   const dismissed = await db
     .update(triageItems)
-    .set({ status: "dismissed" })
+    .set({ status: "dismissed", sourceBody: null })
     .where(and(eq(triageItems.id, itemId), eq(triageItems.userId, user.id), eq(triageItems.status, "pending")))
     .returning({ id: triageItems.id });
   if (dismissed.length === 0) return { error: "Triage item not found." };

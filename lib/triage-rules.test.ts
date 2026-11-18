@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_EMAIL_BODY_CHARS,
+  MAX_STORED_BODY_CHARS,
   buildPromotionTaskPayload,
   formatEmailBatchForAi,
   normalizeParsedTriageItems,
@@ -190,5 +191,32 @@ describe("buildPromotionTaskPayload deadline", () => {
 
   it("is null when the item has no deadline", () => {
     expect(buildPromotionTaskPayload({ category: "requirement", sourceSubject: "S" }).deadline).toBeNull();
+  });
+});
+
+describe("normalizeParsedTriageItems sourceBody", () => {
+  const emails = [{ body: "  First email text  " }, { body: "Second email text" }, { body: "   " }, {}];
+  const bodyFor = (emailNumber: unknown, list: { body?: string }[] | undefined = emails) =>
+    normalizeParsedTriageItems([{ category: "reply", sourceSubject: "X", emailNumber }], list)[0].sourceBody;
+
+  it("takes the trimmed body from the email the AI says the item came from (1-based)", () => {
+    expect(bodyFor(1)).toBe("First email text");
+    expect(bodyFor(2)).toBe("Second email text");
+  });
+
+  it("leaves it unset for a blank or missing body, a bad number, or no emails list (pasted dumps)", () => {
+    expect(bodyFor(3)).toBeUndefined();
+    expect(bodyFor(4)).toBeUndefined();
+    expect(bodyFor(0)).toBeUndefined();
+    expect(bodyFor(99)).toBeUndefined();
+    expect(bodyFor("1")).toBeUndefined();
+    // No emails list at all (pasted dump); not bodyFor(1, undefined), which would fall back to the default list.
+    expect(normalizeParsedTriageItems([{ category: "reply", sourceSubject: "X", emailNumber: 1 }])[0].sourceBody).toBeUndefined();
+  });
+
+  it("stores far more than the AI sees, but still caps it", () => {
+    expect(MAX_STORED_BODY_CHARS).toBeGreaterThan(MAX_EMAIL_BODY_CHARS);
+    const body = bodyFor(1, [{ body: "x".repeat(MAX_STORED_BODY_CHARS * 2) }]);
+    expect(body).toHaveLength(MAX_STORED_BODY_CHARS);
   });
 });

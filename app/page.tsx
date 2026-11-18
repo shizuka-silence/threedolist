@@ -10,7 +10,7 @@ import { SubmitButton } from "@/components/submit-button";
 import { db } from "@/db";
 import { projectFiles, projects, taskProofs, taskSubtasks, tasks, triageItems } from "@/db/schema";
 import { loadReceipts } from "@/app/receipts";
-import { toClientProjectFile, toClientTask } from "@/lib/dashboard-rows";
+import { toClientProjectFile, toClientTask, toClientTriageItem } from "@/lib/dashboard-rows";
 import type { OptimisticState } from "@/lib/optimistic-rules";
 import { isProjectLink } from "@/lib/project-rules";
 import { createClient } from "@/lib/supabase/server";
@@ -82,6 +82,8 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
         summary: triageItems.summary,
         suggestedAction: triageItems.suggestedAction,
         sourceUrl: triageItems.sourceUrl,
+        deadline: triageItems.deadline,
+        sourceBody: triageItems.sourceBody,
         category: triageItems.category,
       })
       .from(triageItems)
@@ -117,7 +119,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
   const signedFileUrl = new Map(storedFiles.map((f, i) => [f.fileUrl, signed?.[imageProofs.length + i]?.signedUrl ?? null]));
 
   const initial: OptimisticState = {
-    triage: pendingTriage,
+    triage: pendingTriage.map(toClientTriageItem),
     projects: projectRows,
     completedTasks: [],
     projectFiles: fileRows.map((f) => toClientProjectFile(f, signedFileUrl.get(f.fileUrl) ?? null)),
