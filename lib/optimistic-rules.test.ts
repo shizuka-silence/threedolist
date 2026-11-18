@@ -166,6 +166,24 @@ describe("project order and logged minutes", () => {
     expect(next.projects.map((p) => p.id)).toEqual(["p3", "p1", "p2"]);
   });
 
+  it("task/reorder orders tasks by the given ids", () => {
+    const base = state({ tasks: [task({ id: "a" }), task({ id: "b" }), task({ id: "c" })] });
+    const next = applyOptimisticChange(base, { type: "task/reorder", ids: ["c", "a", "b"] });
+    expect(next.tasks.map((t) => t.id)).toEqual(["c", "a", "b"]);
+  });
+
+  it("task/reorder keeps tasks missing from ids after the listed ones, in their old order", () => {
+    const base = state({ tasks: [task({ id: "a" }), task({ id: "b" }), task({ id: "c" }), task({ id: "d" })] });
+    const next = applyOptimisticChange(base, { type: "task/reorder", ids: ["c", "a"] });
+    expect(next.tasks.map((t) => t.id)).toEqual(["c", "a", "b", "d"]);
+  });
+
+  it("task/reorder ignores unknown ids", () => {
+    const base = state({ tasks: [task({ id: "a" }), task({ id: "b" })] });
+    const next = applyOptimisticChange(base, { type: "task/reorder", ids: ["zzz", "b", "a"] });
+    expect(next.tasks.map((t) => t.id)).toEqual(["b", "a"]);
+  });
+
   it("task/addMinutes adds to actualMinutes without touching the timer", () => {
     const base = state({ tasks: [task({ id: "t1", actualMinutes: 10, activeTimerStartedAt: "2026-01-01T10:00:00Z" })] });
     const next = applyOptimisticChange(base, { type: "task/addMinutes", id: "t1", minutes: 20 });
