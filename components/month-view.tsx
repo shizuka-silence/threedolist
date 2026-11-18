@@ -1,7 +1,7 @@
 "use client";
 
 import { useDashboard } from "@/components/dashboard-provider";
-import { groupTasksByDay, monthGrid } from "@/lib/calendar-rules";
+import { groupTasksByDay, monthGrid, projectTint } from "@/lib/calendar-rules";
 
 const MAX_CHIPS = 3;
 const timeLabel = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -36,7 +36,11 @@ export function MonthView({ day, today, onOpenDay }: { day: string; today: strin
                 {Number(d.slice(8))}
               </span>
               {tasks.slice(0, MAX_CHIPS).map((t) => (
-                <span key={t.id} className="truncate rounded bg-primary/15 px-1 text-[11px] leading-tight text-foreground">
+                <span
+                  key={t.id}
+                  style={projectTint(state.projects.find((p) => p.id === t.projectId)?.color)}
+                  className="truncate rounded border border-transparent bg-primary/15 px-1 text-[11px] leading-tight text-foreground"
+                >
                   {timeLabel(t.scheduledStart!)} {t.title}
                 </span>
               ))}

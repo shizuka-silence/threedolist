@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertCanDeleteTask, assertCanUndoCompletion, filterReceiptTasks, findSpawnedCopy, formatReceiptVariance, reopenedStatus } from "./receipt-rules";
+import { assertCanDeleteTask, assertCanUndoCompletion, filterReceiptTasks, findSpawnedCopy, formatReceiptVariance, normalizeReflection, reopenedStatus } from "./receipt-rules";
 
 describe("assertCanUndoCompletion", () => {
   it("allows undoing the latest completed task", () => {
@@ -126,5 +126,32 @@ describe("formatReceiptVariance", () => {
 
   it("handles an unestimated task", () => {
     expect(formatReceiptVariance(null, 15)).toEqual({ label: "Est: — | Actual: 15m", deltaMinutes: null });
+  });
+});
+
+describe("filterReceiptTasks reflection search", () => {
+  const tasks = [
+    { title: "Write report", reflection: "Underestimated the editing pass" },
+    { title: "Water plants", reflection: null },
+  ];
+
+  it("finds a task by words in its reflection", () => {
+    expect(filterReceiptTasks(tasks, "editing")).toEqual([tasks[0]]);
+  });
+});
+
+describe("normalizeReflection", () => {
+  it("trims the text", () => {
+    expect(normalizeReflection("  Took longer than planned  ")).toBe("Took longer than planned");
+  });
+
+  it("turns blank text into null so a cleared reflection is stored as empty", () => {
+    expect(normalizeReflection("")).toBeNull();
+    expect(normalizeReflection("   \n ")).toBeNull();
+  });
+
+  it("rejects over-long reflections", () => {
+    expect(() => normalizeReflection("x".repeat(5001))).toThrow(/5000/);
+    expect(normalizeReflection("x".repeat(5000))).toHaveLength(5000);
   });
 });
