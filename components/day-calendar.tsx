@@ -1,11 +1,13 @@
 "use client";
 
-import { DndContext, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { DndContext, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type CollisionDetection, type DragEndEvent } from "@dnd-kit/core";
 import { GripVertical, X } from "lucide-react";
 import { useState } from "react";
 import type { Receipt } from "@/app/receipts";
-import { scheduleTask, unscheduleTask } from "@/app/actions/tasks";
+import { reorderTasks, scheduleTask, unscheduleTask } from "@/app/actions/tasks";
 import { useDashboard } from "@/components/dashboard-provider";
+import { ReorderLine, taskDropId, useReorderLine } from "@/components/draggable-task";
+import { moveProject } from "@/lib/project-rules";
 import { SmartMouseSensor, SmartTouchSensor } from "@/components/dnd-sensors";
 import { Button } from "@/components/ui/button";
 import { buildSlotTimestamp, computeBlockHeightPx, continuedSegments, doneBlocks, formatVarianceBadge, projectTint, toDayStr } from "@/lib/calendar-rules";
@@ -27,7 +29,18 @@ const SLOTS = Array.from({ length: (LAST_HOUR - FIRST_HOUR) * 2 }, (_, i) => ({
   minute: (i % 2) * 30,
 }));
 
-const slotId = (hour: number, minute: number) => `${hour}:${minute}`;
+// Reordering rows ("task:<id>") follow the pointer; time slots follow the dragged box's top edge, so where you grab it doesn't matter.
+const topEdgeCollision: CollisionDetection = (args) => {
+  const isRow = (c: { id: string | number }) => String(c.id).startsWith("task:");
+  const rows = pointerWithin({ ...args, droppableContainers: args.droppableContainers.filter(isRow) });
+  if (rows.length) return rows;
+  const top = args.collisionRect.top;
+  return args.droppableContainers
+    .filter((c) => !isRow(c) && (({ top: t, bottom: b }) => t <= top && top < b)(args.droppableRects.get(c.id) ?? { top: 0, bottom: 0 }))
+    .map((c) => ({ id: c.id }));
+};
+
+const slotId =(hour: number, minute: number) => `${hour}:${minute}`;
 const timeLabel = (h: number, m: number) => new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 // Scheduling lives only here; the week and month views are read-only. `day` comes from CalendarTab.
@@ -49,8 +62,16 @@ export function DayCalendar({ day, receipts }: { day: string; receipts: Receipt[
 
   function onDragEnd({ active, over }: DragEndEvent) {
     if (!over) return;
+    const activeId = String(active.id);
+    if (String(over.id).startsWith("task:")) {
+      // Dropped on a "To schedule" row: reorder (only unscheduled rows move there; a block dropped on a row does nothing).
+      if (!unscheduled.some((t) => t.id === activeId)) return;
+      const ids = moveProject(tasks.map((t) => t.id), activeId, String(over.id).slice("task:".length));
+      run({ type: "task/reorder", ids }, () => reorderTasks(ids));
+      return;
+    }
     const [hour, minute] = String(over.id).split(":").map(Number);
-    schedule(String(active.id), hour, minute);
+    schedule(activeId, hour, minute);
   }
 
   const startOf = (t: CalendarTask) => new Date(t.scheduledStart!);
@@ -66,12 +87,12 @@ export function DayCalendar({ day, receipts }: { day: string; receipts: Receipt[
   const hasElsewhere = tasks.some((t) => t.scheduledStart) && todays.length === 0;
 
   return (
-    <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragEnd={onDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={topEdgeCollision} onDragEnd={onDragEnd}>
       <section className="flex flex-col gap-4">
         <div>
           <h2 className="mb-2 font-medium">To schedule</h2>
           <ul className="flex flex-col gap-2">
-            {unscheduled.map((t) => <UnscheduledRow key={t.id} task={t} onPick={() => setPicking(t)} />)}
+            {unscheduled.map((t) => <UnscheduledRow key={t.id} task={t} ids={unscheduled.map((u) => u.id)} onPick={() => setPicking(t)} />)}
             {unscheduled.length === 0 && <p className="text-sm text-muted-foreground">No unscheduled tasks with an estimate.</p>}
           </ul>
           {noEstimate > 0 && <p className="mt-2 text-sm text-muted-foreground">{noEstimate} task(s) need an estimate before they can be scheduled.</p>}
@@ -145,10 +166,17 @@ function useDragProps(id: string) {
 
 const GripHint = () => <GripVertical className="size-4 shrink-0 text-muted-foreground" aria-hidden />;
 
-function UnscheduledRow({ task, onPick }: { task: CalendarTask; onPick: () => void }) {
+function UnscheduledRow({ task, ids, onPick }: { task: CalendarTask; ids: string[]; onPick: () => void }) {
   const drag = useDragProps(task.id);
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: taskDropId(task.id) });
+  const line = useReorderLine(task.id, ids, isOver);
   return (
-    <li {...drag} className="flex select-none items-center gap-2 rounded-lg border bg-background p-2 md:cursor-grab [-webkit-touch-callout:none]">
+    <li
+      {...drag}
+      ref={(node) => { drag.ref(node); setDropRef(node); }}
+      className="relative flex select-none items-center gap-2 rounded-lg border bg-background p-2 md:cursor-grab [-webkit-touch-callout:none]"
+    >
+      <ReorderLine side={line} />
       <GripHint />
       <div className="min-w-0 flex-1">
         <p className="truncate">{task.title}</p>

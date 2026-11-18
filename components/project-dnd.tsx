@@ -4,7 +4,8 @@ import { DndContext, pointerWithin, useSensor, useSensors, type DragEndEvent } f
 import { assignTaskToProject, reorderProjects } from "@/app/actions/projects";
 import { useDashboard } from "@/components/dashboard-provider";
 import { SmartMouseSensor, SmartTouchSensor } from "@/components/dnd-sensors";
-import { moveProject } from "@/lib/project-rules";
+import { reorderTasks } from "@/app/actions/tasks";
+import { moveProject } from "@/lib/project-rules"; // generic array-move; used for folders and tasks
 
 // Drop targets are ProjectStrip folders (id "project:<uuid>" or "project:none"). Draggables are tasks (DraggableTask)
 // and the folders themselves (id "folder:<uuid>"), which reorder the strip.
@@ -18,6 +19,13 @@ export function ProjectDnd({ children }: { children: React.ReactNode }) {
 
   function onDragEnd({ active, over }: DragEndEvent) {
     const target = String(over?.id ?? "");
+    if (target.startsWith("task:")) {
+      const dragged = String(active.id);
+      if (dragged.startsWith("folder:")) return;
+      const ids = moveProject(state.tasks.map((t) => t.id), dragged, target.slice("task:".length));
+      run({ type: "task/reorder", ids }, () => reorderTasks(ids));
+      return;
+    }
     if (!target.startsWith("project:")) return;
     const projectId = target.slice("project:".length);
     const dragged = String(active.id);

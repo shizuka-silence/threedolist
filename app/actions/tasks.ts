@@ -1,6 +1,6 @@
 "use server";
 
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { projects, taskProofs, taskSubtasks, tasks, timeLogs } from "@/db/schema";
 import { generateTaskPrep } from "@/lib/ai";
@@ -336,6 +336,21 @@ export async function updateTaskTitle(taskId: string, rawTitle: string): Promise
     .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)))
     .returning({ id: tasks.id });
   if (updated.length === 0) return { error: "Task not found." };
+  return {};
+}
+
+// ids = the user's open tasks in their new order (a subset is fine; each gets position = its index).
+export async function reorderTasks(ids: string[]): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+  if (new Set(ids).size !== ids.length || !ids.every(isUuid)) return { error: "Invalid task list." };
+  const owned = ids.length ? await db.select({ id: tasks.id }).from(tasks).where(and(eq(tasks.userId, user.id), inArray(tasks.id, ids))) : [];
+  if (owned.length !== ids.length) return { error: "Task list is out of date. Reload and try again." };
+  await db.transaction(async (tx) => {
+    for (const [position, id] of ids.entries()) {
+      await tx.update(tasks).set({ position }).where(and(eq(tasks.id, id), eq(tasks.userId, user.id)));
+    }
+  });
   return {};
 }
 

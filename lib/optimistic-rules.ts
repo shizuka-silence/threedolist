@@ -71,6 +71,7 @@ export type OptimisticChange =
   | { type: "triage/upsert"; item: OptimisticTriageItem; replaces?: string }
   | { type: "project/upsert"; project: OptimisticProject }
   | { type: "project/reorder"; ids: string[] }
+  | { type: "task/reorder"; ids: string[] }
   | { type: "file/upsert"; file: OptimisticProjectFile }
   | { type: "task/remove"; id: string }
   | { type: "project/remove"; id: string }
@@ -151,6 +152,10 @@ export function applyOptimisticChange(state: OptimisticState, change: Optimistic
     case "project/reorder": {
       const rank = (id: string) => { const i = change.ids.indexOf(id); return i === -1 ? change.ids.length : i; };
       return { ...state, projects: [...state.projects].sort((a, b) => rank(a.id) - rank(b.id)) }; // stable sort keeps unknown ids in order
+    }
+    case "task/reorder": {
+      const rank = (id: string) => { const i = change.ids.indexOf(id); return i === -1 ? change.ids.length : i; };
+      return { ...state, tasks: [...state.tasks].sort((a, b) => rank(a.id) - rank(b.id)) };
     }
     case "task/addMinutes":
       return editTask(change.id, (t) => ({ ...t, actualMinutes: t.actualMinutes + change.minutes }));

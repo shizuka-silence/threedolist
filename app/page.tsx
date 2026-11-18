@@ -58,7 +58,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
       })
       .from(tasks)
       .where(eq(tasks.userId, user.id))
-      .orderBy(desc(tasks.createdAt)),
+      .orderBy(tasks.position, desc(tasks.createdAt)),
     db
       .select({ id: taskProofs.id, taskId: taskProofs.taskId, path: taskProofs.storagePathOrUrl })
       .from(taskProofs)

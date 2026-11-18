@@ -32,7 +32,7 @@ export function TaskBoard({ selectedParam, onSelectProject }: { selectedParam?: 
       {selectedProject && <ProjectWorkspace projectId={selectedProject.id} name={selectedProject.name} color={selectedProject.color} />}
       <ul className="flex flex-col gap-3">
         {visible.map((task) => (
-          <DraggableTask key={task.id} id={task.id}>
+          <DraggableTask key={task.id} id={task.id} ids={visible.map((t) => t.id)}>
             <TaskCard
               {...task} projects={state.projects} hideProject={!!selectedProject}
               active={task.id === activeTaskId} onActivate={() => setActiveTaskId(task.id)}
