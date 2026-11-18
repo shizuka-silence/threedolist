@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { projects, taskProofs, taskSubtasks, tasks, timeLogs } from "@/db/schema";
 import { generateTaskPrep } from "@/lib/ai";
@@ -10,7 +10,7 @@ import {
   assertCanComplete, assertValidLoggedMinutes, calculateLoggedMinutes, normalizeAiPrepOutput, normalizeTaskTitle, resolveAiEstimate, type AiPrepParts,
 } from "@/lib/task-rules";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { assertCanDeleteTask } from "@/lib/receipt-rules";
+import { assertCanDeleteTask, assertCanUndoCompletion, findSpawnedCopy, reopenedStatus } from "@/lib/receipt-rules";
 import { nextDeadline, nextWeekdayDeadline } from "@/lib/recurrence";
 import { createClient } from "@/lib/supabase/server";
 
@@ -162,6 +162,48 @@ export async function completeTask(taskId: string): Promise<Result & { nextTask?
     })
     .returning();
   return { nextTask: toClientTask(row) };
+}
+
+// Takes back the most recent completion only (receipts stay set in stone otherwise). Proofs, subtasks and logged time are kept.
+export async function uncompleteTask(taskId: string): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+
+  const task = await findOwnedTask(user.id, taskId);
+  if (!task) return { error: "Task not found." };
+  const [latest] = await db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(and(eq(tasks.userId, user.id), eq(tasks.status, "completed")))
+    .orderBy(desc(tasks.completedAt))
+    .limit(1);
+  try {
+    assertCanUndoCompletion(task, latest?.id ?? null);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(tasks)
+      .set({ status: reopenedStatus(task.scheduledStart), completedAt: null })
+      .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)));
+
+    if (!task.repeatEvery && !task.repeatWeekdays?.length) return;
+    // shortcut: no parent link on the spawned copy, so it is matched by title/project/created-after-completion and
+    // only deleted while untouched; add a spawned_from column if this ever picks the wrong row.
+    const proofCount = sql<number>`(select count(*)::int from task_proofs where task_proofs.task_id = tasks.id)`;
+    const candidates = await tx
+      .select({
+        id: tasks.id, title: tasks.title, projectId: tasks.projectId, status: tasks.status, createdAt: tasks.createdAt,
+        actualMinutes: tasks.actualMinutes, activeTimerStartedAt: tasks.activeTimerStartedAt, proofCount,
+      })
+      .from(tasks)
+      .where(and(eq(tasks.userId, user.id), eq(tasks.title, task.title), ne(tasks.id, taskId)));
+    const copyId = findSpawnedCopy(candidates, { title: task.title, projectId: task.projectId, completedAt: task.completedAt! });
+    if (copyId) await tx.delete(tasks).where(and(eq(tasks.id, copyId), eq(tasks.userId, user.id)));
+  });
+  return {};
 }
 
 export async function startTaskTimer(taskId: string): Promise<Result> {

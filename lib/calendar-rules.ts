@@ -5,6 +5,11 @@ export function computeBlockHeightPx(estimatedMinutes: number | null, pixelsPerH
   return (minutes / 60) * pixelsPerHour;
 }
 
+// Project colors are validated #rrggbb, so appending two hex digits makes them semi-transparent. No project: undefined (default block color).
+export function projectTint(color: string | undefined): { backgroundColor: string; borderColor: string } | undefined {
+  return color ? { backgroundColor: `${color}33`, borderColor: `${color}80` } : undefined;
+}
+
 export function formatVarianceBadge(estimatedMinutes: number | null, actualMinutes: number): string {
   return `Est: ${estimatedMinutes ?? "--"}${estimatedMinutes === null ? "" : "m"} | Actual: ${actualMinutes}m`;
 }
@@ -65,4 +70,21 @@ export function groupTasksByDay<T extends { scheduledStart: string | null }>(tas
     byDay.set(key, [...(byDay.get(key) ?? []), t]);
   }
   return byDay;
+}
+
+type DoneBlock = { id: string; title: string; start: Date; minutes: number };
+
+// What actually happened on the calendar: one block per timer session (real clock times). Work logged without the
+// timer has no clock time, so it falls back to the scheduled slot sized by actual minutes; with neither, no block.
+export function doneBlocks(r: {
+  id: string; title: string; scheduledStart: string | null; actualMinutes: number;
+  sessions: { startedAt: string; endedAt: string }[];
+}): DoneBlock[] {
+  if (r.sessions.length) {
+    return r.sessions.map((s) => ({
+      id: r.id, title: r.title, start: new Date(s.startedAt), minutes: Math.round((+new Date(s.endedAt) - +new Date(s.startedAt)) / 60_000),
+    }));
+  }
+  if (r.scheduledStart && r.actualMinutes > 0) return [{ id: r.id, title: r.title, start: new Date(r.scheduledStart), minutes: r.actualMinutes }];
+  return [];
 }

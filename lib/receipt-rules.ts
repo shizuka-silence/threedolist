@@ -24,3 +24,27 @@ export function formatReceiptVariance(
     deltaMinutes: estimatedMinutes === null ? null : actualMinutes - estimatedMinutes,
   };
 }
+
+// Receipts are meant to be set in stone, so only the newest completion can be taken back (a mis-click, not a rewrite of history).
+export function assertCanUndoCompletion(task: { id: string; status: TaskStatus }, latestCompletedId: string | null): void {
+  if (task.status !== "completed" || task.id !== latestCompletedId) throw new Error("Only the latest completed task can be undone.");
+}
+
+export const reopenedStatus = (scheduledStart: Date | string | null): "todo" | "scheduled" => (scheduledStart ? "scheduled" : "todo");
+
+// The repeat copy that completeTask spawned: same title/project, made at or after completion, and still untouched.
+// Newest wins; a copy you've started working on is never returned.
+export function findSpawnedCopy(
+  candidates: {
+    id: string; title: string; projectId: string | null; status: TaskStatus; createdAt: Date;
+    actualMinutes: number; proofCount: number; activeTimerStartedAt: Date | null;
+  }[],
+  original: { title: string; projectId: string | null; completedAt: Date },
+): string | null {
+  const matches = candidates.filter(
+    (c) =>
+      c.title === original.title && c.projectId === original.projectId && c.status === "todo" &&
+      c.createdAt >= original.completedAt && c.actualMinutes === 0 && c.proofCount === 0 && !c.activeTimerStartedAt,
+  );
+  return matches.sort((a, b) => +b.createdAt - +a.createdAt)[0]?.id ?? null;
+}

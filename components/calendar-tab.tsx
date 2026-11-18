@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { Receipt } from "@/app/receipts";
 import { DayCalendar } from "@/components/day-calendar";
 import { MonthView } from "@/components/month-view";
 import { WeekView } from "@/components/week-view";
@@ -21,7 +22,7 @@ function rangeLabel(view: View, day: string) {
 }
 
 // Scheduling only happens in the Day view; Week and Month are read-only overviews that open a day when clicked.
-export function CalendarTab() {
+export function CalendarTab({ receipts }: { receipts: Receipt[] }) {
   const [view, setView] = useState<View>("day");
   const [today, setToday] = useState(""); // set after mount so server and browser agree on the date
   const [picked, setDay] = useState<string | null>(null); // null = follow today
@@ -61,7 +62,7 @@ export function CalendarTab() {
       </div>
 
       {view === "day" ? (
-        <DayCalendar day={day} />
+        <DayCalendar day={day} receipts={receipts} />
       ) : view === "week" ? (
         <WeekView day={day} today={today} onOpenDay={openDay} />
       ) : (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useDashboard } from "@/components/dashboard-provider";
-import { computeBlockHeightPx, groupTasksByDay, weekDays } from "@/lib/calendar-rules";
+import { computeBlockHeightPx, groupTasksByDay, projectTint, weekDays } from "@/lib/calendar-rules";
 
 const PX_PER_HOUR = 40;
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
@@ -50,7 +50,7 @@ export function WeekView({ day, today, onOpenDay }: { day: string; today: string
                     type="button"
                     onClick={() => onOpenDay(d)}
                     title={t.title}
-                    style={{ top: ((start.getHours() * 60 + start.getMinutes()) / 60) * PX_PER_HOUR, height: computeBlockHeightPx(t.estimatedMinutes, PX_PER_HOUR) }}
+                    style={{ ...projectTint(state.projects.find((p) => p.id === t.projectId)?.color), top: ((start.getHours() * 60 + start.getMinutes()) / 60) * PX_PER_HOUR, height: computeBlockHeightPx(t.estimatedMinutes, PX_PER_HOUR) }}
                     className="absolute inset-x-0.5 overflow-hidden rounded-md border bg-primary/15 px-1 text-left text-xs leading-tight"
                   >
                     {t.title}

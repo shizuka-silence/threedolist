@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { uncompleteTask } from "@/app/actions/tasks";
 import type { Receipt } from "@/app/receipts";
 import { useDashboard } from "@/components/dashboard-provider";
 import { filterReceiptTasks, formatReceiptVariance } from "@/lib/receipt-rules";
@@ -10,7 +11,7 @@ const pill = (on: boolean) =>
 
 // Receipts come from the server on each visit to this tab, so they already include anything completed earlier.
 export function ReceiptLog({ receipts: serverReceipts }: { receipts: Receipt[] }) {
-  const { state: { projects, completedTasks } } = useDashboard();
+  const { state: { projects, completedTasks }, run } = useDashboard();
   // Tasks finished this session show up before the next page load; the server list wins once it has them.
   const justCompleted: Receipt[] = completedTasks
     .filter((t) => !serverReceipts.some((r) => r.id === t.id))
@@ -19,13 +20,21 @@ export function ReceiptLog({ receipts: serverReceipts }: { receipts: Receipt[] }
       return {
         id: t.id, title: t.title, notes: null, projectId: t.projectId, projectName: project?.name ?? null,
         projectColor: project?.color ?? null, estimatedMinutes: t.estimatedMinutes, actualMinutes: t.actualMinutes,
-        completedAt: t.completedAt, proofs: [],
+        completedAt: t.completedAt, scheduledStart: t.scheduledStart, sessions: [], proofs: [],
       };
     });
   const receipts = [...justCompleted, ...serverReceipts];
   const [query, setQuery] = useState("");
   const [projectId, setProjectId] = useState("all");
   const shown = filterReceiptTasks(receipts, query, projectId);
+  const latestId = receipts[0]?.id; // newest of the unfiltered list, so searching never makes another row look like the latest
+
+  // Full reload: the reopened task needs its proofs, subtasks and signed thumbnails, which only the server page builds.
+  async function undo(id: string) {
+    const result = await run(null, () => uncompleteTask(id));
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- router.push would keep the stale provider state
+    if (!result.error) window.location.assign("/");
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -72,6 +81,11 @@ export function ReceiptLog({ receipts: serverReceipts }: { receipts: Receipt[] }
               <p className="font-medium">{r.title}</p>
               <Proofs proofs={r.proofs} />
             </div>
+            {r.id === latestId && (
+              <button type="button" onClick={() => undo(r.id)} className="h-9 w-fit rounded-md border px-3 text-sm font-medium">
+                Undo completion
+              </button>
+            )}
           </li>
         ))}
         {shown.length === 0 && <p className="text-muted-foreground">No receipts match.</p>}

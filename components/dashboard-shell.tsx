@@ -72,7 +72,7 @@ export function DashboardShell({ initialTab, initialProject, receipts, canSyncGm
       </nav>
 
       {tab === "calendar" ? (
-        <CalendarTab />
+        <CalendarTab receipts={receipts} />
       ) : tab === "receipts" ? (
         <ReceiptLog receipts={receipts} />
       ) : tab === "triage" ? (

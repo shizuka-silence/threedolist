@@ -3,15 +3,17 @@
 import { DndContext, pointerWithin, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { GripVertical, X } from "lucide-react";
 import { useState } from "react";
+import type { Receipt } from "@/app/receipts";
 import { scheduleTask, unscheduleTask } from "@/app/actions/tasks";
 import { useDashboard } from "@/components/dashboard-provider";
 import { SmartMouseSensor, SmartTouchSensor } from "@/components/dnd-sensors";
 import { Button } from "@/components/ui/button";
-import { buildSlotTimestamp, computeBlockHeightPx, formatVarianceBadge, toDayStr } from "@/lib/calendar-rules";
+import { buildSlotTimestamp, computeBlockHeightPx, doneBlocks, formatVarianceBadge, projectTint, toDayStr } from "@/lib/calendar-rules";
 
 type CalendarTask = {
   id: string;
   title: string;
+  projectId: string | null;
   estimatedMinutes: number | null;
   actualMinutes: number;
   scheduledStart: string | null; // ISO; rendered in the browser's timezone
@@ -29,7 +31,7 @@ const slotId = (hour: number, minute: number) => `${hour}:${minute}`;
 const timeLabel = (h: number, m: number) => new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 // Scheduling lives only here; the week and month views are read-only. `day` comes from CalendarTab.
-export function DayCalendar({ day }: { day: string }) {
+export function DayCalendar({ day, receipts }: { day: string; receipts: Receipt[] }) {
   const { state, run } = useDashboard();
   const tasks: CalendarTask[] = state.tasks;
   const [picking, setPicking] = useState<CalendarTask | null>(null);
@@ -55,6 +57,9 @@ export function DayCalendar({ day }: { day: string }) {
   const todays = tasks.filter((t) => t.scheduledStart && toDayStr(startOf(t)) === day);
   const unscheduled = tasks.filter((t) => !t.scheduledStart && t.estimatedMinutes);
   const noEstimate = tasks.filter((t) => !t.scheduledStart && !t.estimatedMinutes).length;
+  // Finished work: server receipts (real timer sessions) plus tasks completed this session, which have no sessions yet.
+  const sessionDone = state.completedTasks.filter((t) => !receipts.some((r) => r.id === t.id)).map((t) => ({ ...t, sessions: [] }));
+  const dones = [...receipts, ...sessionDone].flatMap(doneBlocks).filter((b) => toDayStr(b.start) === day);
   const hasElsewhere = tasks.some((t) => t.scheduledStart) && todays.length === 0;
 
   return (
@@ -79,10 +84,12 @@ export function DayCalendar({ day }: { day: string }) {
                 key={t.id}
                 task={t}
                 top={(minutesFromTop / 60) * PX_PER_HOUR}
+                color={state.projects.find((p) => p.id === t.projectId)?.color}
                 onUnschedule={() => run({ type: "task/unschedule", id: t.id }, () => unscheduleTask(t.id))}
               />
             );
           })}
+          {dones.map((b, i) => <DoneBlock key={`${b.id}-${i}`} block={b} />)}
         </div>
         {hasElsewhere && <p className="text-sm text-muted-foreground">Nothing scheduled for this day; other days have blocks.</p>}
       </section>
@@ -150,12 +157,12 @@ function UnscheduledRow({ task, onPick }: { task: CalendarTask; onPick: () => vo
   );
 }
 
-function Block({ task, top, onUnschedule }: { task: CalendarTask; top: number; onUnschedule: () => void }) {
+function Block({ task, top, color, onUnschedule }: { task: CalendarTask; top: number; color: string | undefined; onUnschedule: () => void }) {
   const drag = useDragProps(task.id);
   return (
     <div
       {...drag}
-      style={{ ...drag.style, top, height: computeBlockHeightPx(task.estimatedMinutes, PX_PER_HOUR) }}
+      style={{ ...drag.style, ...projectTint(color), top, height: computeBlockHeightPx(task.estimatedMinutes, PX_PER_HOUR) }}
       className="absolute left-16 right-0 select-none rounded-md border bg-primary/15 text-sm md:cursor-grab [-webkit-touch-callout:none]"
     >
       <div className="flex h-full items-start gap-1 overflow-hidden rounded-md px-2 py-1 pr-10">
@@ -173,6 +180,20 @@ function Block({ task, top, onUnschedule }: { task: CalendarTask; top: number; o
       >
         <X className="size-4" />
       </button>
+    </div>
+  );
+}
+
+// What actually happened: not draggable. Full width is fine since the past can't be scheduled into.
+function DoneBlock({ block }: { block: { title: string; start: Date; minutes: number } }) {
+  const top = ((block.start.getHours() * 60 + block.start.getMinutes()) / 60) * PX_PER_HOUR;
+  return (
+    <div
+      style={{ top, height: Math.max((block.minutes / 60) * PX_PER_HOUR, 16) }}
+      className="absolute left-16 right-0 overflow-hidden rounded-md border border-emerald-500/40 bg-emerald-500/20 px-2 py-1 text-sm"
+    >
+      <p className="truncate leading-tight">{block.title}</p>
+      <p className="truncate text-xs text-muted-foreground">Done: {block.minutes}m</p>
     </div>
   );
 }
