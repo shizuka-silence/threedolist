@@ -1,5 +1,66 @@
 import { describe, expect, it } from "vitest";
-import { assertCanDeleteTask, filterReceiptTasks, formatReceiptVariance } from "./receipt-rules";
+import { assertCanDeleteTask, assertCanUndoCompletion, filterReceiptTasks, findSpawnedCopy, formatReceiptVariance, reopenedStatus } from "./receipt-rules";
+
+describe("assertCanUndoCompletion", () => {
+  it("allows undoing the latest completed task", () => {
+    expect(() => assertCanUndoCompletion({ id: "a", status: "completed" }, "a")).not.toThrow();
+  });
+
+  it("blocks undoing an older completed task", () => {
+    expect(() => assertCanUndoCompletion({ id: "a", status: "completed" }, "b")).toThrow(/latest/i);
+  });
+
+  it("blocks undoing a task that is not completed", () => {
+    expect(() => assertCanUndoCompletion({ id: "a", status: "todo" }, "a")).toThrow(/latest/i);
+  });
+
+  it("blocks when nothing is completed", () => {
+    expect(() => assertCanUndoCompletion({ id: "a", status: "completed" }, null)).toThrow(/latest/i);
+  });
+});
+
+describe("reopenedStatus", () => {
+  it("returns to scheduled when the task still has a calendar slot", () => {
+    expect(reopenedStatus("2026-11-18T09:00:00.000Z")).toBe("scheduled");
+  });
+
+  it("returns to todo when it was never scheduled", () => {
+    expect(reopenedStatus(null)).toBe("todo");
+  });
+});
+
+describe("findSpawnedCopy", () => {
+  const original = { title: "Water plants", projectId: "p1", completedAt: new Date("2026-11-18T10:00:00Z") };
+  const copy = {
+    id: "c1", title: "Water plants", projectId: "p1", status: "todo" as const,
+    createdAt: new Date("2026-11-18T10:00:01Z"), actualMinutes: 0, proofCount: 0, activeTimerStartedAt: null,
+  };
+
+  it("finds the untouched copy made at completion time", () => {
+    expect(findSpawnedCopy([copy], original)).toBe("c1");
+  });
+
+  it("picks the newest when several match", () => {
+    const newer = { ...copy, id: "c2", createdAt: new Date("2026-11-18T10:00:05Z") };
+    expect(findSpawnedCopy([copy, newer], original)).toBe("c2");
+  });
+
+  it("ignores copies created before the completion", () => {
+    expect(findSpawnedCopy([{ ...copy, createdAt: new Date("2026-11-18T09:00:00Z") }], original)).toBeNull();
+  });
+
+  it("ignores copies with a different title or project", () => {
+    expect(findSpawnedCopy([{ ...copy, title: "Other" }], original)).toBeNull();
+    expect(findSpawnedCopy([{ ...copy, projectId: "p2" }], original)).toBeNull();
+  });
+
+  it("never picks a copy that has been touched", () => {
+    expect(findSpawnedCopy([{ ...copy, actualMinutes: 5 }], original)).toBeNull();
+    expect(findSpawnedCopy([{ ...copy, proofCount: 1 }], original)).toBeNull();
+    expect(findSpawnedCopy([{ ...copy, activeTimerStartedAt: new Date() }], original)).toBeNull();
+    expect(findSpawnedCopy([{ ...copy, status: "completed" as const }], original)).toBeNull();
+  });
+});
 
 describe("assertCanDeleteTask", () => {
   it("blocks deleting a completed task with a clear message", () => {

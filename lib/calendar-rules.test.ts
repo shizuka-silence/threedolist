@@ -1,7 +1,51 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildSlotTimestamp, computeBlockHeightPx, formatVarianceBadge, groupTasksByDay, monthGrid, shiftDate, weekDays,
+  buildSlotTimestamp, computeBlockHeightPx, doneBlocks, formatVarianceBadge, groupTasksByDay, monthGrid, shiftDate, weekDays,
 } from "./calendar-rules";
+
+describe("doneBlocks", () => {
+  const base = { id: "t1", title: "Write abstracts", scheduledStart: null, actualMinutes: 0, sessions: [] };
+
+  it("makes one block per real timer session, at its real start time", () => {
+    const blocks = doneBlocks({
+      ...base,
+      actualMinutes: 75,
+      sessions: [
+        { startedAt: "2026-11-18T09:00:00.000Z", endedAt: "2026-11-18T09:45:00.000Z" },
+        { startedAt: "2026-11-18T13:00:00.000Z", endedAt: "2026-11-18T13:30:00.000Z" },
+      ],
+    });
+    expect(blocks).toEqual([
+      { id: "t1", title: "Write abstracts", start: new Date("2026-11-18T09:00:00.000Z"), minutes: 45 },
+      { id: "t1", title: "Write abstracts", start: new Date("2026-11-18T13:00:00.000Z"), minutes: 30 },
+    ]);
+  });
+
+  it("falls back to the scheduled slot sized by actual minutes when there are no sessions", () => {
+    expect(doneBlocks({ ...base, scheduledStart: "2026-11-18T14:00:00.000Z", actualMinutes: 190 })).toEqual([
+      { id: "t1", title: "Write abstracts", start: new Date("2026-11-18T14:00:00.000Z"), minutes: 190 },
+    ]);
+  });
+
+  it("shows nothing when there are no sessions and no scheduled slot", () => {
+    expect(doneBlocks({ ...base, actualMinutes: 30 })).toEqual([]);
+  });
+
+  it("shows nothing when no time was spent", () => {
+    expect(doneBlocks({ ...base, scheduledStart: "2026-11-18T14:00:00.000Z", actualMinutes: 0 })).toEqual([]);
+  });
+
+  it("prefers real sessions over the scheduled slot", () => {
+    const blocks = doneBlocks({
+      ...base,
+      scheduledStart: "2026-11-18T14:00:00.000Z",
+      actualMinutes: 20,
+      sessions: [{ startedAt: "2026-11-18T09:00:00.000Z", endedAt: "2026-11-18T09:20:00.000Z" }],
+    });
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].start).toEqual(new Date("2026-11-18T09:00:00.000Z"));
+  });
+});
 
 describe("computeBlockHeightPx", () => {
   it("scales height proportionally to estimated minutes", () => {
