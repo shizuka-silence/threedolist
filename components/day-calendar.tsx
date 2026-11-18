@@ -156,14 +156,21 @@ function Block({ task, top, onUnschedule }: { task: CalendarTask; top: number; o
     <div
       {...drag}
       style={{ ...drag.style, top, height: computeBlockHeightPx(task.estimatedMinutes, PX_PER_HOUR) }}
-      className="absolute left-16 right-0 flex items-start gap-1 select-none overflow-hidden rounded-md border bg-primary/15 px-2 py-1 text-sm md:cursor-grab [-webkit-touch-callout:none]"
+      className="absolute left-16 right-0 select-none rounded-md border bg-primary/15 text-sm md:cursor-grab [-webkit-touch-callout:none]"
     >
-      <GripHint />
-      <div className="min-w-0 flex-1">
-        <p className="truncate leading-tight">{task.title}</p>
-        <p className="truncate text-xs text-muted-foreground">{formatVarianceBadge(task.estimatedMinutes, task.actualMinutes)}</p>
+      <div className="flex h-full items-start gap-1 overflow-hidden rounded-md px-2 py-1 pr-10">
+        <GripHint />
+        <div className="min-w-0 flex-1">
+          <p className="truncate leading-tight">{task.title}</p>
+          <p className="truncate text-xs text-muted-foreground">{formatVarianceBadge(task.estimatedMinutes, task.actualMinutes)}</p>
+        </div>
       </div>
-      <button onClick={onUnschedule} aria-label={`Unschedule ${task.title}`} className="flex size-8 shrink-0 items-center justify-center rounded-md">
+      {/* Centered on the block and outside its clipping wrapper, so it stays clickable even on 15-minute blocks. */}
+      <button
+        onClick={onUnschedule}
+        aria-label={`Unschedule ${task.title}`}
+        className="absolute right-1 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-md bg-background/80 hover:bg-background"
+      >
         <X className="size-4" />
       </button>
     </div>

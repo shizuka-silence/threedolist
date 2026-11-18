@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/submit-button";
 import { signIn, signUp } from "./actions";
 
 type SearchParams = Promise<{ error?: string; message?: string }>;
@@ -42,8 +42,8 @@ export default function LoginPage({ searchParams }: { searchParams: SearchParams
         <Suspense>
           <Feedback searchParams={searchParams} />
         </Suspense>
-        <Button type="submit" formAction={signIn} size="lg">Sign in</Button>
-        <Button type="submit" formAction={signUp} size="lg" variant="outline">Sign up</Button>
+        <SubmitButton formAction={signIn} size="lg" pendingLabel="Signing in…">Sign in</SubmitButton>
+        <SubmitButton formAction={signUp} size="lg" variant="outline" pendingLabel="Signing up…">Sign up</SubmitButton>
         <Link href="/forgot-password" className="text-center text-sm text-muted-foreground underline underline-offset-2">Forgot password?</Link>
       </form>
     </main>

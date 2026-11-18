@@ -6,7 +6,7 @@ import { Suspense } from "react";
 import { signOut } from "@/app/login/actions";
 import { DashboardProvider } from "@/components/dashboard-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/submit-button";
 import { db } from "@/db";
 import { projectFiles, projects, taskProofs, taskSubtasks, tasks, triageItems } from "@/db/schema";
 import { loadReceipts } from "@/app/receipts";
@@ -141,9 +141,9 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
             <p className="truncate font-mono text-xs text-muted-foreground">{user.email}</p>
           </div>
           <form action={signOut}>
-            <Button type="submit" variant="ghost" size="icon-lg" aria-label="Sign out" title="Sign out" className="text-muted-foreground">
+            <SubmitButton variant="ghost" size="icon-lg" aria-label="Sign out" title="Sign out" pendingLabel="…" className="text-muted-foreground">
               <LogOut />
-            </Button>
+            </SubmitButton>
           </form>
         </header>
         <DashboardShell

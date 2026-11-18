@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertCanComplete, assertValidLoggedMinutes, calculateLoggedMinutes, normalizeAiPrepOutput, resolveAiEstimate } from "./task-rules";
+import { assertCanComplete, assertValidLoggedMinutes, calculateLoggedMinutes, normalizeAiPrepOutput, normalizeTaskTitle, resolveAiEstimate } from "./task-rules";
 
 describe("assertCanComplete (proof-of-work gate)", () => {
   it("throws for a proof task with no proofs", () => {
@@ -192,5 +192,17 @@ describe("normalizeAiPrepOutput with selected parts", () => {
 
   it("throws when no part is selected", () => {
     expect(() => normalizeAiPrepOutput(raw, none)).toThrow();
+  });
+});
+
+describe("normalizeTaskTitle", () => {
+  it("trims the title", () => {
+    expect(normalizeTaskTitle("  Write report  ")).toBe("Write report");
+  });
+
+  it("rejects empty, whitespace-only and over-long titles", () => {
+    expect(() => normalizeTaskTitle("")).toThrow();
+    expect(() => normalizeTaskTitle("   ")).toThrow();
+    expect(() => normalizeTaskTitle("x".repeat(201))).toThrow();
   });
 });

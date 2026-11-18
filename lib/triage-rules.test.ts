@@ -156,3 +156,39 @@ describe("parseTriageCategory", () => {
     expect(() => parseTriageCategory(value)).toThrow();
   });
 });
+
+describe("normalizeParsedTriageItems deadline (UTC+8)", () => {
+  const deadlineFor = (extra: Record<string, unknown>) =>
+    normalizeParsedTriageItems([{ category: "requirement", sourceSubject: "X", ...extra }])[0].deadline;
+
+  it("combines date and time as UTC+8", () => {
+    expect(deadlineFor({ deadlineDate: "2026-11-21", deadlineTime: "17:00" })).toEqual(new Date("2026-11-21T09:00:00.000Z"));
+  });
+
+  it("defaults to 11:59 PM UTC+8 when no time is given", () => {
+    expect(deadlineFor({ deadlineDate: "2026-11-21" })).toEqual(new Date("2026-11-21T15:59:00.000Z"));
+    expect(deadlineFor({ deadlineDate: "2026-11-21", deadlineTime: null })).toEqual(new Date("2026-11-21T15:59:00.000Z"));
+  });
+
+  it("treats an invalid time as no time", () => {
+    expect(deadlineFor({ deadlineDate: "2026-11-21", deadlineTime: "25:99" })).toEqual(new Date("2026-11-21T15:59:00.000Z"));
+  });
+
+  it("leaves the deadline unset without a valid date", () => {
+    expect(deadlineFor({})).toBeUndefined();
+    expect(deadlineFor({ deadlineDate: null, deadlineTime: "17:00" })).toBeUndefined();
+    expect(deadlineFor({ deadlineDate: "next friday" })).toBeUndefined();
+    expect(deadlineFor({ deadlineDate: "2026-13-45" })).toBeUndefined();
+  });
+});
+
+describe("buildPromotionTaskPayload deadline", () => {
+  it("carries the triage item's deadline to the task", () => {
+    const deadline = new Date("2026-11-21T09:00:00.000Z");
+    expect(buildPromotionTaskPayload({ category: "requirement", sourceSubject: "S", deadline }).deadline).toEqual(deadline);
+  });
+
+  it("is null when the item has no deadline", () => {
+    expect(buildPromotionTaskPayload({ category: "requirement", sourceSubject: "S" }).deadline).toBeNull();
+  });
+});

@@ -265,3 +265,17 @@ describe("timer, proof and AI prep", () => {
     expect(s).toEqual(snapshot);
   });
 });
+
+describe("task/rename", () => {
+  it("changes only the matching task's title", () => {
+    const next = applyOptimisticChange(state(), { type: "task/rename", id: "t1", title: "New name" });
+    expect(next.tasks.map((t) => [t.id, t.title])).toEqual([["t1", "New name"], ["t2", "Write report"]]);
+  });
+});
+
+describe("buildOptimisticTask deadline", () => {
+  it("defaults to no deadline and accepts one (promoted triage items)", () => {
+    expect(buildOptimisticTask("a", "A", "tick").deadline).toBeNull();
+    expect(buildOptimisticTask("a", "A", "tick", "2026-11-21T09:00:00.000Z").deadline).toBe("2026-11-21T09:00:00.000Z");
+  });
+});
