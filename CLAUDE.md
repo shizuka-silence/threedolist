@@ -20,7 +20,7 @@ This app is designed for a **forgetful, friction-averse user**.
 ## Exact Data Model
 - `projects`: `id`, `user_id`, `name`, `color`, `created_at`
 - `project_files`: `id`, `project_id`, `file_name`, `file_url`, `created_at` (reference docs/links for the folder)
-- `tasks`: `id`, `user_id` (uuid, not null), `project_id` (nullable), `title`, `notes`, `completion_type` (`'proof'` default | `'tick'`), `status` (`'todo'` | `'scheduled'` | `'completed'`), `estimated_minutes` (int), `actual_minutes` (int, default 0), `scheduled_start` (timestamp, nullable), `active_timer_started_at` (timestamp, nullable), `ai_clarifying_questions` (jsonb), `completed_at` (timestamp, nullable), `created_at`
+- `tasks`: `id`, `user_id` (uuid, not null), `project_id` (nullable), `title`, `notes`, `reflection` (text, nullable; written from the Receipt Log), `completion_type` (`'proof'` default | `'tick'`), `status` (`'todo'` | `'scheduled'` | `'completed'`), `estimated_minutes` (int), `actual_minutes` (int, default 0), `scheduled_start` (timestamp, nullable), `active_timer_started_at` (timestamp, nullable), `ai_clarifying_questions` (jsonb), `completed_at` (timestamp, nullable), `created_at`
 - `task_subtasks`: `id`, `task_id`, `label`, `is_completed`, `source` (`'user'` | `'ai_pitfall'`)
 - `task_proofs`: `id`, `task_id`, `type` (`'image'` | `'file'` | `'url'` | `'note'`), `storage_path_or_url`, `caption`, `created_at`
 - `time_logs`: `id`, `task_id`, `started_at`, `ended_at`, `duration_minutes`

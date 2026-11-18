@@ -7,6 +7,7 @@ export type Receipt = {
   id: string;
   title: string;
   notes: string | null;
+  reflection: string | null;
   projectId: string | null;
   projectName: string | null;
   projectColor: string | null;
@@ -25,6 +26,7 @@ export async function loadReceipts(supabase: Awaited<ReturnType<typeof createCli
       id: tasks.id,
       title: tasks.title,
       notes: tasks.notes,
+      reflection: tasks.reflection,
       projectId: tasks.projectId,
       projectName: projects.name,
       projectColor: projects.color,

@@ -10,7 +10,7 @@ import {
   assertCanComplete, assertValidLoggedMinutes, calculateLoggedMinutes, normalizeAiPrepOutput, normalizeTaskTitle, resolveAiEstimate, type AiPrepParts,
 } from "@/lib/task-rules";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { assertCanDeleteTask, assertCanUndoCompletion, findSpawnedCopy, reopenedStatus } from "@/lib/receipt-rules";
+import { assertCanDeleteTask, assertCanUndoCompletion, findSpawnedCopy, normalizeReflection, reopenedStatus } from "@/lib/receipt-rules";
 import { nextDeadline, nextWeekdayDeadline } from "@/lib/recurrence";
 import { createClient } from "@/lib/supabase/server";
 
@@ -333,6 +333,26 @@ export async function updateTaskTitle(taskId: string, rawTitle: string): Promise
   const updated = await db
     .update(tasks)
     .set({ title })
+    .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)))
+    .returning({ id: tasks.id });
+  if (updated.length === 0) return { error: "Task not found." };
+  return {};
+}
+
+// Works on completed tasks on purpose: reflections are written from the Receipt Log.
+export async function updateTaskReflection(taskId: string, rawReflection: string): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+  let reflection: string | null;
+  try {
+    reflection = normalizeReflection(rawReflection);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+
+  const updated = await db
+    .update(tasks)
+    .set({ reflection })
     .where(and(eq(tasks.id, taskId), eq(tasks.userId, user.id)))
     .returning({ id: tasks.id });
   if (updated.length === 0) return { error: "Task not found." };

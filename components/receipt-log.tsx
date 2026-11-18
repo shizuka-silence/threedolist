@@ -1,7 +1,8 @@
 "use client";
 
+import { Undo2 } from "lucide-react";
 import { useState } from "react";
-import { uncompleteTask } from "@/app/actions/tasks";
+import { uncompleteTask, updateTaskReflection } from "@/app/actions/tasks";
 import type { Receipt } from "@/app/receipts";
 import { useDashboard } from "@/components/dashboard-provider";
 import { filterReceiptTasks, formatReceiptVariance } from "@/lib/receipt-rules";
@@ -18,7 +19,7 @@ export function ReceiptLog({ receipts: serverReceipts }: { receipts: Receipt[] }
     .map((t) => {
       const project = projects.find((p) => p.id === t.projectId);
       return {
-        id: t.id, title: t.title, notes: null, projectId: t.projectId, projectName: project?.name ?? null,
+        id: t.id, title: t.title, notes: null, reflection: null, projectId: t.projectId, projectName: project?.name ?? null,
         projectColor: project?.color ?? null, estimatedMinutes: t.estimatedMinutes, actualMinutes: t.actualMinutes,
         completedAt: t.completedAt, scheduledStart: t.scheduledStart, sessions: [], proofs: [],
       };
@@ -62,8 +63,8 @@ export function ReceiptLog({ receipts: serverReceipts }: { receipts: Receipt[] }
 
       <ul className="flex flex-col gap-3">
         {shown.map((r) => (
-          <li key={r.id} className="flex flex-col gap-2 rounded-lg border p-3">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <li key={r.id} className="relative flex flex-col gap-2 rounded-lg border p-3">
+            <div className={`flex flex-wrap items-center gap-2 text-xs text-muted-foreground ${r.id === latestId ? "pr-9" : ""}`}>
               {r.projectName ? (
                 <span className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-foreground">
                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: r.projectColor ?? undefined }} />
@@ -81,15 +82,65 @@ export function ReceiptLog({ receipts: serverReceipts }: { receipts: Receipt[] }
               <p className="font-medium">{r.title}</p>
               <Proofs proofs={r.proofs} />
             </div>
+            <Reflection taskId={r.id} initial={r.reflection} />
             {r.id === latestId && (
-              <button type="button" onClick={() => undo(r.id)} className="h-9 w-fit rounded-md border px-3 text-sm font-medium">
-                Undo completion
+              <button
+                type="button"
+                onClick={() => undo(r.id)}
+                aria-label="Undo completion"
+                title="Undo completion"
+                className="absolute right-2 top-2 flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <Undo2 className="size-4" />
               </button>
             )}
           </li>
         ))}
         {shown.length === 0 && <p className="text-muted-foreground">No receipts match.</p>}
       </ul>
+    </div>
+  );
+}
+
+// Collapsed to one button; once open it's a plain textarea that saves when you click away, so nothing is lost by forgetting a Save button.
+function Reflection({ taskId, initial }: { taskId: string; initial: string | null }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(initial ?? "");
+  const [saved, setSaved] = useState(initial ?? ""); // last value known to be stored
+  const [status, setStatus] = useState<string | null>(null);
+
+  async function save() {
+    if (text.trim() === saved.trim()) return;
+    setStatus("Saving…");
+    const result = await updateTaskReflection(taskId, text);
+    if (result.error) return setStatus(result.error);
+    setSaved(text);
+    setStatus("Saved");
+  }
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="h-9 w-fit rounded-md border px-3 text-sm font-medium">
+        {saved.trim() ? "Show reflection" : "Add reflection"}
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      <textarea
+        value={text}
+        onChange={(e) => { setText(e.target.value); setStatus(null); }}
+        onBlur={save}
+        autoFocus
+        rows={4}
+        aria-label="Reflection"
+        placeholder="What went well, what took longer than expected, what to do differently?"
+        className="rounded-md border bg-background p-2 text-base"
+      />
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <button type="button" onClick={() => setOpen(false)} className="h-9 rounded-md px-2">Hide</button>
+        {status && <span role="status">{status}</span>}
+      </div>
     </div>
   );
 }

@@ -28,6 +28,7 @@ export const tasks = pgTable("tasks", {
   projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   notes: text("notes"),
+  reflection: text("reflection"), // written after completion, from the Receipt Log
   completionType: text("completion_type", { enum: ["proof", "tick"] }).notNull().default("proof"),
   status: text("status", { enum: ["todo", "scheduled", "completed"] }).notNull().default("todo"),
   estimatedMinutes: integer("estimated_minutes"),
