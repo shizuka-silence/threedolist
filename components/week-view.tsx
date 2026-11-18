@@ -1,7 +1,7 @@
 "use client";
 
 import { useDashboard } from "@/components/dashboard-provider";
-import { computeBlockHeightPx, groupTasksByDay, projectTint, weekDays } from "@/lib/calendar-rules";
+import { computeBlockHeightPx, continuedSegments, projectTint, weekDays } from "@/lib/calendar-rules";
 
 const PX_PER_HOUR = 40;
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
@@ -10,7 +10,6 @@ const hourLabel = (h: number) => new Date(2000, 0, 1, h).toLocaleTimeString([], 
 // Read-only: no drag, no schedule buttons. Clicking a day or a block opens that day, where scheduling happens.
 export function WeekView({ day, today, onOpenDay }: { day: string; today: string; onOpenDay: (day: string) => void }) {
   const { state } = useDashboard();
-  const byDay = groupTasksByDay(state.tasks);
   const days = weekDays(day);
 
   return (
@@ -42,16 +41,17 @@ export function WeekView({ day, today, onOpenDay }: { day: string; today: string
           {days.map((d) => (
             <div key={d} className={`relative flex-1 border-l ${d === today ? "bg-primary/5" : ""}`}>
               {HOURS.map((h) => <div key={h} style={{ height: PX_PER_HOUR }} className="border-t" />)}
-              {(byDay.get(d) ?? []).map((t) => {
-                const start = new Date(t.scheduledStart!);
+              {state.tasks.flatMap((t) =>
+                t.scheduledStart ? continuedSegments(new Date(t.scheduledStart), t.estimatedMinutes).filter(({ seg }) => seg.day === d).map((s) => ({ t, ...s })) : [],
+              ).map(({ t, seg, fromPrev, toNext }) => {
                 return (
                   <button
                     key={t.id}
                     type="button"
                     onClick={() => onOpenDay(d)}
                     title={t.title}
-                    style={{ ...projectTint(state.projects.find((p) => p.id === t.projectId)?.color), top: ((start.getHours() * 60 + start.getMinutes()) / 60) * PX_PER_HOUR, height: computeBlockHeightPx(t.estimatedMinutes, PX_PER_HOUR) }}
-                    className="absolute inset-x-0.5 overflow-hidden rounded-md border bg-primary/15 px-1 text-left text-xs leading-tight"
+                    style={{ ...projectTint(state.projects.find((p) => p.id === t.projectId)?.color), top: (seg.topMinutes / 60) * PX_PER_HOUR, height: computeBlockHeightPx(seg.minutes, PX_PER_HOUR) }}
+                    className={`absolute inset-x-0.5 overflow-hidden rounded-md border bg-primary/15 px-1 text-left text-xs leading-tight ${fromPrev ? "border-t-0 rounded-t-none" : ""} ${toNext ? "border-b-0 rounded-b-none" : ""}`}
                   >
                     {t.title}
                   </button>

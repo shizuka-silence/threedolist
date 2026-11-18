@@ -8,7 +8,7 @@ import { scheduleTask, unscheduleTask } from "@/app/actions/tasks";
 import { useDashboard } from "@/components/dashboard-provider";
 import { SmartMouseSensor, SmartTouchSensor } from "@/components/dnd-sensors";
 import { Button } from "@/components/ui/button";
-import { buildSlotTimestamp, computeBlockHeightPx, doneBlocks, formatVarianceBadge, projectTint, toDayStr } from "@/lib/calendar-rules";
+import { buildSlotTimestamp, computeBlockHeightPx, continuedSegments, doneBlocks, formatVarianceBadge, projectTint, toDayStr } from "@/lib/calendar-rules";
 
 type CalendarTask = {
   id: string;
@@ -54,7 +54,10 @@ export function DayCalendar({ day, receipts }: { day: string; receipts: Receipt[
   }
 
   const startOf = (t: CalendarTask) => new Date(t.scheduledStart!);
-  const todays = tasks.filter((t) => t.scheduledStart && toDayStr(startOf(t)) === day);
+  // One block per task per day it covers: a block running past midnight continues at the top of the next day.
+  const todays = tasks.flatMap((t) =>
+    t.scheduledStart ? continuedSegments(startOf(t), t.estimatedMinutes).filter(({ seg }) => seg.day === day).map((s) => ({ task: t, ...s })) : [],
+  );
   const unscheduled = tasks.filter((t) => !t.scheduledStart && t.estimatedMinutes);
   const noEstimate = tasks.filter((t) => !t.scheduledStart && !t.estimatedMinutes).length;
   // Finished work: server receipts (real timer sessions) plus tasks completed this session, which have no sessions yet.
@@ -76,19 +79,18 @@ export function DayCalendar({ day, receipts }: { day: string; receipts: Receipt[
 
         <div className="relative" style={{ height: SLOTS.length * (PX_PER_HOUR / 2) }}>
           {SLOTS.map(({ hour, minute }) => <Slot key={slotId(hour, minute)} hour={hour} minute={minute} />)}
-          {todays.map((t) => {
-            const start = startOf(t);
-            const minutesFromTop = (start.getHours() - FIRST_HOUR) * 60 + start.getMinutes();
-            return (
-              <Block
-                key={t.id}
-                task={t}
-                top={(minutesFromTop / 60) * PX_PER_HOUR}
-                color={state.projects.find((p) => p.id === t.projectId)?.color}
-                onUnschedule={() => run({ type: "task/unschedule", id: t.id }, () => unscheduleTask(t.id))}
-              />
-            );
-          })}
+          {todays.map(({ task: t, seg, fromPrev, toNext }) => (
+            <Block
+              key={t.id}
+              task={t}
+              fromPrev={fromPrev}
+              toNext={toNext}
+              top={((seg.topMinutes - FIRST_HOUR * 60) / 60) * PX_PER_HOUR}
+              minutes={seg.minutes}
+              color={state.projects.find((p) => p.id === t.projectId)?.color}
+              onUnschedule={() => run({ type: "task/unschedule", id: t.id }, () => unscheduleTask(t.id))}
+            />
+          ))}
           {dones.map((b, i) => <DoneBlock key={`${b.id}-${i}`} block={b} />)}
         </div>
         {hasElsewhere && <p className="text-sm text-muted-foreground">Nothing scheduled for this day; other days have blocks.</p>}
@@ -157,15 +159,17 @@ function UnscheduledRow({ task, onPick }: { task: CalendarTask; onPick: () => vo
   );
 }
 
-function Block({ task, top, color, onUnschedule }: { task: CalendarTask; top: number; color: string | undefined; onUnschedule: () => void }) {
+function Block({ task, top, minutes, fromPrev, toNext, color, onUnschedule }: { task: CalendarTask; top: number; minutes: number; fromPrev: boolean; toNext: boolean; color: string | undefined; onUnschedule: () => void }) {
   const drag = useDragProps(task.id);
+  // A piece that joins the previous/next day's piece loses that edge's border and rounding.
+  const edges = `${fromPrev ? "border-t-0 rounded-t-none" : ""} ${toNext ? "border-b-0 rounded-b-none" : ""}`;
   return (
     <div
       {...drag}
-      style={{ ...drag.style, ...projectTint(color), top, height: computeBlockHeightPx(task.estimatedMinutes, PX_PER_HOUR) }}
-      className="absolute left-16 right-0 select-none rounded-md border bg-primary/15 text-sm md:cursor-grab [-webkit-touch-callout:none]"
+      style={{ ...drag.style, ...projectTint(color), top, height: computeBlockHeightPx(minutes, PX_PER_HOUR) }}
+      className={`absolute left-16 right-0 select-none rounded-md border bg-primary/15 text-sm md:cursor-grab [-webkit-touch-callout:none] ${edges}`}
     >
-      <div className="flex h-full items-start gap-1 overflow-hidden rounded-md px-2 py-1 pr-10">
+      <div className={`flex h-full items-start gap-1 overflow-hidden rounded-md px-2 py-0.5 pr-10 ${edges}`}>
         <GripHint />
         <div className="min-w-0 flex-1">
           <p className="truncate leading-tight">{task.title}</p>

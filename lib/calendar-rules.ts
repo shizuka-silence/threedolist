@@ -1,8 +1,25 @@
 const DEFAULT_ESTIMATE_MINUTES = 30;
 
+const MIN_BLOCK_HEIGHT_PX = 24; // one line of text, so short tasks stay readable
+
 export function computeBlockHeightPx(estimatedMinutes: number | null, pixelsPerHour = 64): number {
   const minutes = estimatedMinutes || DEFAULT_ESTIMATE_MINUTES;
-  return (minutes / 60) * pixelsPerHour;
+  return Math.max((minutes / 60) * pixelsPerHour, MIN_BLOCK_HEIGHT_PX);
+}
+
+/** Splits a block at each local midnight so the part past the day's end shows at the top of the next day. */
+export function blockSegments(start: Date, estimatedMinutes: number | null): { day: string; topMinutes: number; minutes: number }[] {
+  let remaining = estimatedMinutes || DEFAULT_ESTIMATE_MINUTES;
+  let cursor = start;
+  const segments = [];
+  while (remaining > 0) {
+    const nextMidnight = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+    const minutes = Math.min(remaining, Math.round((+nextMidnight - +cursor) / 60_000));
+    segments.push({ day: toDayStr(cursor), topMinutes: cursor.getHours() * 60 + cursor.getMinutes(), minutes });
+    remaining -= minutes;
+    cursor = nextMidnight;
+  }
+  return segments;
 }
 
 // Project colors are validated #rrggbb, so appending two hex digits makes them semi-transparent. No project: undefined (default block color).
@@ -29,7 +46,13 @@ export function toDayStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-const parseDay = (day: string) => {
+/** blockSegments plus whether each piece joins the previous/next day's piece (for drawing it without that edge). */
+export function continuedSegments(start: Date, estimatedMinutes: number | null) {
+  const segs = blockSegments(start, estimatedMinutes);
+  return segs.map((seg, i) => ({ seg, fromPrev: i > 0, toNext: i < segs.length - 1 }));
+}
+
+const parseDay =(day: string) => {
   const [y, m, d] = day.split("-").map(Number);
   return { y, m: m - 1, d };
 };
