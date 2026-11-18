@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildSlotTimestamp, computeBlockHeightPx, doneBlocks, formatVarianceBadge, groupTasksByDay, monthGrid, shiftDate, weekDays,
+  blockSegments, buildSlotTimestamp, computeBlockHeightPx, doneBlocks, formatVarianceBadge, groupTasksByDay, monthGrid, shiftDate, weekDays,
 } from "./calendar-rules";
 
 describe("doneBlocks", () => {
@@ -64,6 +64,46 @@ describe("computeBlockHeightPx", () => {
 
   it("falls back to 30 minutes when the estimate is 0", () => {
     expect(computeBlockHeightPx(0, 60)).toBe(30);
+  });
+
+  it("never goes below the readable minimum height", () => {
+    expect(computeBlockHeightPx(15, 64)).toBe(24);
+    expect(computeBlockHeightPx(5, 40)).toBe(24);
+  });
+});
+
+describe("blockSegments", () => {
+  // Local-time dates, like the calendar itself.
+  const at = (d: number, h: number, m = 0) => new Date(2026, 10, d, h, m);
+
+  it("returns one segment when the block stays within its day", () => {
+    expect(blockSegments(at(18, 9, 30), 60)).toEqual([{ day: "2026-11-18", topMinutes: 570, minutes: 60 }]);
+  });
+
+  it("cuts at midnight and continues on the next day", () => {
+    expect(blockSegments(at(18, 23), 180)).toEqual([
+      { day: "2026-11-18", topMinutes: 1380, minutes: 60 },
+      { day: "2026-11-19", topMinutes: 0, minutes: 120 },
+    ]);
+  });
+
+  it("spans more than two days", () => {
+    expect(blockSegments(at(18, 22), 24 * 60 + 180)).toEqual([
+      { day: "2026-11-18", topMinutes: 1320, minutes: 120 },
+      { day: "2026-11-19", topMinutes: 0, minutes: 1440 },
+      { day: "2026-11-20", topMinutes: 0, minutes: 60 },
+    ]);
+  });
+
+  it("makes no empty segment when the block ends exactly at midnight", () => {
+    expect(blockSegments(at(18, 23), 60)).toEqual([{ day: "2026-11-18", topMinutes: 1380, minutes: 60 }]);
+  });
+
+  it("uses the 30 minute default for a missing estimate", () => {
+    expect(blockSegments(at(18, 23, 45), null)).toEqual([
+      { day: "2026-11-18", topMinutes: 1425, minutes: 15 },
+      { day: "2026-11-19", topMinutes: 0, minutes: 15 },
+    ]);
   });
 });
 
