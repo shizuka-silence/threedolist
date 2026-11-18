@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { SubmitButton } from "@/components/submit-button";
-import { signIn, signUp } from "./actions";
+import { signIn, signInWithGoogle, signUp } from "./actions";
 
 type SearchParams = Promise<{ error?: string; message?: string }>;
 
@@ -45,6 +45,10 @@ export default function LoginPage({ searchParams }: { searchParams: SearchParams
         <SubmitButton formAction={signIn} size="lg" pendingLabel="Signing in…">Sign in</SubmitButton>
         <SubmitButton formAction={signUp} size="lg" variant="outline" pendingLabel="Signing up…">Sign up</SubmitButton>
         <Link href="/forgot-password" className="text-center text-sm text-muted-foreground underline underline-offset-2">Forgot password?</Link>
+      </form>
+      {/* Own form so the email/password `required` fields don't block it. */}
+      <form>
+        <SubmitButton formAction={signInWithGoogle} size="lg" variant="outline" className="w-full" pendingLabel="Redirecting…">Continue with Google</SubmitButton>
       </form>
     </main>
   );

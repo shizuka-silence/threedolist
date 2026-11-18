@@ -7,6 +7,14 @@ export async function GET(request: NextRequest) {
   const tokenHash = request.nextUrl.searchParams.get("token_hash");
   const type = request.nextUrl.searchParams.get("type");
 
+  const code = request.nextUrl.searchParams.get("code"); // Google sign-in (PKCE): same browser that started it
+  if (code) {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (!error) return redirectTo("/");
+    return redirectTo(`/login?error=${encodeURIComponent("Google sign-in failed. Try again.")}`);
+  }
+
   if (tokenHash && type === "recovery") {
     const supabase = await createClient();
     const { error } = await supabase.auth.verifyOtp({ type: "recovery", token_hash: tokenHash });

@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { validateNewPassword } from "@/lib/auth-rules";
 import { createClient } from "@/lib/supabase/server";
@@ -49,6 +50,18 @@ export async function updatePassword(formData: FormData) {
   const { error } = await supabase.auth.updateUser({ password });
   if (error) backToLogin("error", error.message, "/reset-password");
   redirect("/");
+}
+
+// Google sends the user back to /auth/confirm?code=..., which finishes the sign-in.
+export async function signInWithGoogle() {
+  const origin = (await headers()).get("origin"); // server actions are POSTs, so the browser always sends Origin
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: `${origin}/auth/confirm` },
+  });
+  if (error || !data.url) backToLogin("error", error?.message ?? "Google sign-in failed. Try again.");
+  redirect(data.url);
 }
 
 export async function signOut() {
