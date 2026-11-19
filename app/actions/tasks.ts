@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { projects, taskProofs, taskSubtasks, tasks, timeLogs } from "@/db/schema";
 import { generateTaskPrep } from "@/lib/ai";
 import { isUuid, toClientTask } from "@/lib/dashboard-rows";
-import type { OptimisticSubtask, OptimisticTask, TaskSchedule } from "@/lib/optimistic-rules";
+import type { OptimisticSubtask, OptimisticTask, TaskSchedule, TextProof } from "@/lib/optimistic-rules";
 import {
   assertCanComplete, assertValidLoggedMinutes, calculateLoggedMinutes, normalizeAiPrepOutput, normalizeTaskTitle, resolveAiEstimate, type AiPrepParts,
 } from "@/lib/task-rules";
@@ -78,7 +78,7 @@ export async function createTask(input: {
 
 // FormData because images are sent as files. Fields: taskId, type ("image" | "text"), file | text, caption?
 // Returns a signed thumbnail URL for image proofs so the card can show it without a re-render.
-export async function addTaskProof(formData: FormData): Promise<Result & { thumbnail?: { id: string; url: string } }> {
+export async function addTaskProof(formData: FormData): Promise<Result & { thumbnail?: { id: string; url: string }; textProof?: TextProof }> {
   const { supabase, user } = await requireUser();
   if (!user) return { error: "Not signed in." };
 
@@ -112,10 +112,9 @@ export async function addTaskProof(formData: FormData): Promise<Result & { thumb
     const text = String(formData.get("text") ?? "").trim();
     if (!text) return { error: "Type a note or paste a link first." };
     const type = /^https?:\/\//i.test(text) ? "url" : "note";
-    await db.insert(taskProofs).values({ taskId, type, storagePathOrUrl: text, caption });
+    const [proof] = await db.insert(taskProofs).values({ taskId, type, storagePathOrUrl: text, caption }).returning({ id: taskProofs.id });
+    return { textProof: { id: proof.id, type, text } };
   }
-
-  return {};
 }
 
 export async function removeTaskProof(proofId: string): Promise<Result> {
@@ -502,6 +501,21 @@ export async function addSubtask(taskId: string, label: string, id?: string): Pr
     .values({ id, taskId, label: trimmed, source: "user" })
     .returning({ id: taskSubtasks.id, label: taskSubtasks.label, isCompleted: taskSubtasks.isCompleted, source: taskSubtasks.source });
   return { subtask };
+}
+
+export async function removeSubtask(subtaskId: string): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+
+  const [owned] = await db
+    .select({ id: taskSubtasks.id })
+    .from(taskSubtasks)
+    .innerJoin(tasks, eq(tasks.id, taskSubtasks.taskId))
+    .where(and(eq(taskSubtasks.id, subtaskId), eq(tasks.userId, user.id)));
+  if (!owned) return { error: "Subtask not found." };
+
+  await db.delete(taskSubtasks).where(eq(taskSubtasks.id, subtaskId));
+  return {};
 }
 
 export async function toggleSubtask(subtaskId: string): Promise<Result> {

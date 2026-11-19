@@ -33,8 +33,11 @@ export type OptimisticTask = {
   repeatUntil: string | null; // ISO
   proofCount: number;
   thumbnails: { id: string; url: string }[];
+  textProofs: TextProof[]; // note and link proofs; images are in `thumbnails`
   subtasks: OptimisticSubtask[];
 };
+
+export type TextProof = { id: string; type: "note" | "url"; text: string };
 
 export type TaskSchedule = Pick<OptimisticTask, "deadline" | "repeatEvery" | "repeatWeekdays" | "repeatUnit" | "repeatUntil">;
 
@@ -58,6 +61,7 @@ export type OptimisticChange =
   | { type: "triage/add"; item: OptimisticTriageItem }
   | { type: "triage/promote"; id: string; task: OptimisticTask }
   | { type: "task/addSubtask"; taskId: string; subtask: OptimisticSubtask }
+  | { type: "task/removeSubtask"; taskId: string; subtaskId: string }
   | { type: "task/toggleSubtask"; taskId: string; subtaskId: string }
   | { type: "task/complete"; id: string; at?: string }
   | { type: "task/assign"; id: string; projectId: string | null }
@@ -79,7 +83,7 @@ export type OptimisticChange =
   | { type: "task/startTimer"; id: string; at: string }
   | { type: "task/stopTimer"; id: string; minutes: number }
   | { type: "task/addMinutes"; id: string; minutes: number }
-  | { type: "task/addProof"; id: string; thumbnail?: { id: string; url: string } }
+  | { type: "task/addProof"; id: string; thumbnail?: { id: string; url: string }; textProof?: TextProof }
   | { type: "task/removeProof"; id: string; proofId: string }
   | { type: "task/setPrep"; id: string; estimatedMinutes: number | null; questions: string[] | null; pitfalls: OptimisticSubtask[] };
 
@@ -94,7 +98,7 @@ export function buildOptimisticTask(id: string, title: string, completionType: "
   return {
     id, title, completionType, projectId: null, estimatedMinutes: null, actualMinutes: 0, activeTimerStartedAt: null,
     status: "todo", scheduledStart: null, aiClarifyingQuestions: null, deadline, repeatEvery: null, repeatWeekdays: null, repeatUnit: null,
-    repeatUntil: null, proofCount: 0, thumbnails: [], subtasks: [],
+    repeatUntil: null, proofCount: 0, thumbnails: [], textProofs: [], subtasks: [],
   };
 }
 
@@ -115,6 +119,8 @@ export function applyOptimisticChange(state: OptimisticState, change: Optimistic
       return { ...state, triage: state.triage.filter((i) => i.id !== change.id), tasks: [change.task, ...state.tasks] };
     case "task/addSubtask":
       return editTask(change.taskId, (t) => ({ ...t, subtasks: [...t.subtasks, change.subtask] }));
+    case "task/removeSubtask":
+      return editTask(change.taskId, (t) => ({ ...t, subtasks: t.subtasks.filter((s) => s.id !== change.subtaskId) }));
     case "task/toggleSubtask":
       return editTask(change.taskId, (t) => ({
         ...t,
@@ -182,12 +188,14 @@ export function applyOptimisticChange(state: OptimisticState, change: Optimistic
         ...t,
         proofCount: t.proofCount + 1,
         thumbnails: change.thumbnail ? [...t.thumbnails, change.thumbnail] : t.thumbnails,
+        textProofs: change.textProof ? [...t.textProofs, change.textProof] : t.textProofs,
       }));
     case "task/removeProof":
       return editTask(change.id, (t) => ({
         ...t,
         proofCount: Math.max(0, t.proofCount - 1),
         thumbnails: t.thumbnails.filter((x) => x.id !== change.proofId),
+        textProofs: t.textProofs.filter((x) => x.id !== change.proofId),
       }));
     case "task/setPrep":
       return editTask(change.id, (t) => ({

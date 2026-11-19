@@ -1,4 +1,4 @@
-import type { OptimisticProjectFile, OptimisticSubtask, OptimisticTask, OptimisticTriageItem } from "@/lib/optimistic-rules";
+import type { OptimisticProjectFile, OptimisticSubtask, OptimisticTask, OptimisticTriageItem, TextProof } from "@/lib/optimistic-rules";
 import { isProjectLink } from "./project-rules";
 
 // DB row -> client state shape (Dates become ISO strings). Shared by app/page.tsx and the Server Actions
@@ -24,7 +24,7 @@ type TaskRow = {
 
 export function toClientTask(
   row: TaskRow,
-  extra: { proofCount?: number; thumbnails?: { id: string; url: string }[]; subtasks?: OptimisticSubtask[] } = {},
+  extra: { proofCount?: number; thumbnails?: { id: string; url: string }[]; textProofs?: TextProof[]; subtasks?: OptimisticSubtask[] } = {},
 ): OptimisticTask {
   return {
     id: row.id,
@@ -44,6 +44,7 @@ export function toClientTask(
     repeatUntil: row.repeatUntil?.toISOString() ?? null,
     proofCount: extra.proofCount ?? 0,
     thumbnails: extra.thumbnails ?? [],
+    textProofs: extra.textProofs ?? [],
     subtasks: extra.subtasks ?? [],
   };
 }

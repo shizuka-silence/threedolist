@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { LogOut } from "lucide-react";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -36,7 +36,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
   const proofCount = sql<number>`(select count(*)::int from task_proofs where task_proofs.task_id = tasks.id)`;
 
   // None of these queries needs another's result, so they run together instead of one after another.
-  const [rows, imageProofs, subtaskRows, pendingTriage, projectRows, fileRows, receipts] = await Promise.all([
+  const [rows, imageProofs, textProofRows, subtaskRows, pendingTriage, projectRows, fileRows, receipts] = await Promise.all([
     db
       .select({
         id: tasks.id,
@@ -64,6 +64,12 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
       .from(taskProofs)
       .innerJoin(tasks, eq(tasks.id, taskProofs.taskId))
       .where(and(eq(tasks.userId, user.id), eq(taskProofs.type, "image"))),
+    db
+      .select({ id: taskProofs.id, taskId: taskProofs.taskId, type: taskProofs.type, text: taskProofs.storagePathOrUrl })
+      .from(taskProofs)
+      .innerJoin(tasks, eq(tasks.id, taskProofs.taskId))
+      .where(and(eq(tasks.userId, user.id), inArray(taskProofs.type, ["note", "url"])))
+      .orderBy(taskProofs.createdAt),
     db
       .select({
         id: taskSubtasks.id,
@@ -129,6 +135,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
         toClientTask(t, {
           proofCount: t.proofCount,
           thumbnails: thumbnailsByTask.get(t.id) ?? [],
+          textProofs: textProofRows.filter((p) => p.taskId === t.id).map(({ id, type, text }) => ({ id, type: type as "note" | "url", text })),
           subtasks: subtaskRows.filter((s) => s.taskId === t.id),
         }),
       ),

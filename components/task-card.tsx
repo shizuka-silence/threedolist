@@ -3,14 +3,14 @@
 import imageCompression from "browser-image-compression";
 import { useEffect, useRef, useState } from "react";
 import {
-  addSubtask, addTaskProof, completeTask, deleteTask, removeTaskProof, runAiTaskPrep, startTaskTimer, stopTaskTimer, toggleSubtask,
+  addSubtask, addTaskProof, completeTask, deleteTask, removeSubtask, removeTaskProof, runAiTaskPrep, startTaskTimer, stopTaskTimer, toggleSubtask,
   logTaskMinutes, updateTaskEstimate, updateTaskSchedule, updateTaskTitle,
 } from "@/app/actions/tasks";
 import { assignTaskToProject } from "@/app/actions/projects";
 import { useDashboard } from "@/components/dashboard-provider";
 import { Button } from "@/components/ui/button";
 import { formatDeadline, fromDatetimeLocal, isOverdue, toDatetimeLocal } from "@/lib/deadline";
-import type { TaskSchedule } from "@/lib/optimistic-rules";
+import type { TaskSchedule, TextProof } from "@/lib/optimistic-rules";
 import { calculateLoggedMinutes } from "@/lib/task-rules";
 
 // Elements that keep their own double-click behavior instead of toggling the card.
@@ -27,6 +27,7 @@ type Props = TaskSchedule & {
   activeTimerStartedAt: string | null; // ISO
   proofCount: number;
   thumbnails: { id: string; url: string }[];
+  textProofs: TextProof[];
   aiClarifyingQuestions: string[] | null;
   subtasks: { id: string; label: string; isCompleted: boolean; source: "user" | "ai_pitfall" }[];
   projectId: string | null;
@@ -37,7 +38,7 @@ type Props = TaskSchedule & {
 };
 
 export function TaskCard({
-  id, title, completionType, estimatedMinutes, actualMinutes, activeTimerStartedAt, proofCount, thumbnails,
+  id, title, completionType, estimatedMinutes, actualMinutes, activeTimerStartedAt, proofCount, thumbnails, textProofs,
   aiClarifyingQuestions, subtasks, projectId, projects, deadline, repeatEvery, repeatWeekdays, repeatUnit, repeatUntil, hideProject, active, onActivate,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
@@ -120,7 +121,7 @@ export function TaskCard({
       const result = await addTaskProof(formData);
       if (result.error) setNote((current) => current || saved);
       return result;
-    });
+    }, (result) => [{ type: "task/addProof", id, textProof: result.textProof }]);
   }
 
   function logTime(event: React.FormEvent) {
@@ -407,7 +408,15 @@ export function TaskCard({
                     <label className={`flex items-center gap-2 text-sm ${s.source === "ai_pitfall" ? "italic text-muted-foreground" : ""}`}>
                       <input type="checkbox" checked={s.isCompleted} onChange={() => run({ type: "task/toggleSubtask", taskId: id, subtaskId: s.id }, () => toggleSubtask(s.id))} />
                       {s.source === "ai_pitfall" && <span aria-label="AI pitfall">⚠</span>}
-                      {s.label}
+                      <span className="min-w-0 flex-1">{s.label}</span>
+                      <button
+                        type="button"
+                        aria-label="Remove subtask"
+                        className="px-1 text-muted-foreground hover:text-foreground"
+                        onClick={(e) => { e.preventDefault(); run({ type: "task/removeSubtask", taskId: id, subtaskId: s.id }, () => removeSubtask(s.id)); }}
+                      >
+                        ×
+                      </button>
                     </label>
                   </li>
                 ))}
@@ -423,6 +432,27 @@ export function TaskCard({
               />
               <Button type="submit" variant="outline">Add</Button>
             </form>
+            {textProofs.length > 0 && (
+              <ul className="flex flex-col gap-1">
+                {textProofs.map((p) => (
+                  <li key={p.id} className="flex items-center gap-2 text-sm">
+                    {p.type === "url" ? (
+                      <a href={p.text} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate underline">{p.text}</a>
+                    ) : (
+                      <span className="min-w-0 flex-1 truncate">{p.text}</span>
+                    )}
+                    <button
+                      type="button"
+                      aria-label="Remove note"
+                      className="px-1 text-muted-foreground hover:text-foreground"
+                      onClick={() => run({ type: "task/removeProof", id, proofId: p.id }, () => removeTaskProof(p.id))}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
             {isProof && (
               <form onSubmit={addNote} className="flex gap-2">
                 <input

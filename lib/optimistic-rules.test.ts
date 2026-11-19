@@ -23,7 +23,7 @@ describe("buildOptimisticTask", () => {
   it("builds an empty, unassigned todo task with the given id, title and type", () => {
     expect(buildOptimisticTask("tmp", "Reply to Sam", "proof")).toMatchObject({
       id: "tmp", title: "Reply to Sam", completionType: "proof", status: "todo", projectId: null,
-      estimatedMinutes: null, actualMinutes: 0, proofCount: 0, subtasks: [], thumbnails: [], textProofs: [], scheduledStart: null,
+      estimatedMinutes: null, actualMinutes: 0, proofCount: 0, subtasks: [], thumbnails: [], writtenProofs: [], notes: [], scheduledStart: null,
     });
   });
 });
@@ -273,12 +273,21 @@ describe("timer, proof and AI prep", () => {
     expect(next.tasks[0]).toMatchObject({ proofCount: 0, thumbnails: [] });
   });
 
-  it("addProof with a note lists it, and removeProof drops it and decrements proofCount", () => {
-    const note = { id: "pr2", type: "url" as const, text: "https://x/doc" };
-    const added = applyOptimisticChange(state(), { type: "task/addProof", id: "t1", textProof: note });
-    expect(added.tasks[0]).toMatchObject({ proofCount: 1, textProofs: [note] });
+  it("addProof with written text lists it, and removeProof drops it and decrements proofCount", () => {
+    const written = { id: "pr2", text: "Summary of chapter 3" };
+    const added = applyOptimisticChange(state(), { type: "task/addProof", id: "t1", written });
+    expect(added.tasks[0]).toMatchObject({ proofCount: 1, writtenProofs: [written] });
     const next = applyOptimisticChange(added, { type: "task/removeProof", id: "t1", proofId: "pr2" });
-    expect(next.tasks[0]).toMatchObject({ proofCount: 0, textProofs: [] });
+    expect(next.tasks[0]).toMatchObject({ proofCount: 0, writtenProofs: [] });
+  });
+
+  it("notes are reference info: adding or removing one never touches proofCount", () => {
+    const note = { id: "n1", text: "https://x/doc" };
+    const added = applyOptimisticChange(state(), { type: "task/addNote", taskId: "t1", note });
+    expect(added.tasks[0]).toMatchObject({ proofCount: 0, notes: [note] });
+    expect(added.tasks[1].notes).toEqual([]);
+    const next = applyOptimisticChange(added, { type: "task/removeNote", taskId: "t1", noteId: "n1" });
+    expect(next.tasks[0].notes).toEqual([]);
   });
 
   it("setPrep fills an empty estimate, never overwrites a manual one", () => {
