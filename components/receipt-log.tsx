@@ -171,7 +171,7 @@ function Proofs({ proofs }: { proofs: Receipt["proofs"] }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, proofs.length]);
-  const side = "absolute inset-y-0 z-10 flex w-14 items-center justify-center bg-white/10 text-white hover:bg-white/20 sm:w-20";
+  const side = "absolute inset-y-0 z-10 flex w-14 items-center justify-center text-white/60 hover:text-white sm:w-20";
   if (proofs.length === 0) return null;
   return (
     <>
