@@ -195,7 +195,7 @@ function Block({ task, top, minutes, fromPrev, toNext, color, onUnschedule }: { 
     <div
       {...drag}
       style={{ ...drag.style, ...projectTint(color), top, height: computeBlockHeightPx(minutes, PX_PER_HOUR) }}
-      className={`absolute left-16 right-0 select-none rounded-md border bg-primary/15 text-sm md:cursor-grab [-webkit-touch-callout:none] ${edges}`}
+      className={`absolute left-16 right-0 z-10 select-none rounded-md border bg-primary/15 text-sm md:cursor-grab [-webkit-touch-callout:none] ${edges}`}
     >
       <div className={`flex h-full items-start gap-1 overflow-hidden rounded-md px-2 py-0.5 pr-10 ${edges}`}>
         <GripHint />

@@ -118,6 +118,26 @@ export async function addTaskProof(formData: FormData): Promise<Result & { thumb
   return {};
 }
 
+export async function removeTaskProof(proofId: string): Promise<Result> {
+  const { supabase, user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+  if (!isUuid(proofId)) return { error: "Invalid id." };
+
+  const [proof] = await db
+    .select({ id: taskProofs.id, type: taskProofs.type, path: taskProofs.storagePathOrUrl })
+    .from(taskProofs)
+    .innerJoin(tasks, eq(tasks.id, taskProofs.taskId))
+    .where(and(eq(taskProofs.id, proofId), eq(tasks.userId, user.id)));
+  if (!proof) return { error: "Photo not found." };
+
+  if (proof.type === "image") {
+    const { error } = await supabase.storage.from(PROOF_BUCKET).remove([proof.path]);
+    if (error) return { error: `Could not remove photo: ${error.message}` };
+  }
+  await db.delete(taskProofs).where(eq(taskProofs.id, proofId));
+  return {};
+}
+
 // Returns the next copy when the task repeats, so the client can show it without a reload.
 export async function completeTask(taskId: string): Promise<Result & { nextTask?: OptimisticTask }> {
   const { user } = await requireUser();

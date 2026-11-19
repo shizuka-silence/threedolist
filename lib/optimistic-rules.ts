@@ -80,6 +80,7 @@ export type OptimisticChange =
   | { type: "task/stopTimer"; id: string; minutes: number }
   | { type: "task/addMinutes"; id: string; minutes: number }
   | { type: "task/addProof"; id: string; thumbnail?: { id: string; url: string } }
+  | { type: "task/removeProof"; id: string; proofId: string }
   | { type: "task/setPrep"; id: string; estimatedMinutes: number | null; questions: string[] | null; pitfalls: OptimisticSubtask[] };
 
 // Insert at the top, or replace in place when the id (or the temp id in `replaces`) already exists.
@@ -181,6 +182,12 @@ export function applyOptimisticChange(state: OptimisticState, change: Optimistic
         ...t,
         proofCount: t.proofCount + 1,
         thumbnails: change.thumbnail ? [...t.thumbnails, change.thumbnail] : t.thumbnails,
+      }));
+    case "task/removeProof":
+      return editTask(change.id, (t) => ({
+        ...t,
+        proofCount: Math.max(0, t.proofCount - 1),
+        thumbnails: t.thumbnails.filter((x) => x.id !== change.proofId),
       }));
     case "task/setPrep":
       return editTask(change.id, (t) => ({

@@ -3,7 +3,7 @@
 import imageCompression from "browser-image-compression";
 import { useEffect, useRef, useState } from "react";
 import {
-  addSubtask, addTaskProof, completeTask, deleteTask, runAiTaskPrep, startTaskTimer, stopTaskTimer, toggleSubtask,
+  addSubtask, addTaskProof, completeTask, deleteTask, removeTaskProof, runAiTaskPrep, startTaskTimer, stopTaskTimer, toggleSubtask,
   logTaskMinutes, updateTaskEstimate, updateTaskSchedule, updateTaskTitle,
 } from "@/app/actions/tasks";
 import { assignTaskToProject } from "@/app/actions/projects";
@@ -543,10 +543,20 @@ export function TaskCard({
               {thumbnails.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {thumbnails.map((t) => (
-                    <a key={t.id} href={t.url} target="_blank" rel="noreferrer">
-                      {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL */}
-                      <img src={t.url} alt="Proof" className="h-16 w-16 rounded-md border object-cover" />
-                    </a>
+                    <div key={t.id} className="relative">
+                      <a href={t.url} target="_blank" rel="noreferrer">
+                        {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL */}
+                        <img src={t.url} alt="Proof" className="h-16 w-16 rounded-md border object-cover" />
+                      </a>
+                      <button
+                        type="button"
+                        aria-label="Remove photo"
+                        className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border bg-background text-xs leading-none shadow"
+                        onClick={() => run({ type: "task/removeProof", id, proofId: t.id }, () => removeTaskProof(t.id))}
+                      >
+                        ×
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}
