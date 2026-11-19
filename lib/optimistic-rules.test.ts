@@ -256,6 +256,12 @@ describe("timer, proof and AI prep", () => {
     expect(noThumb.tasks[0].thumbnails).toHaveLength(1);
   });
 
+  it("removeProof drops the thumbnail and decrements proofCount", () => {
+    const added = applyOptimisticChange(state(), { type: "task/addProof", id: "t1", thumbnail: { id: "pr1", url: "https://x/1" } });
+    const next = applyOptimisticChange(added, { type: "task/removeProof", id: "t1", proofId: "pr1" });
+    expect(next.tasks[0]).toMatchObject({ proofCount: 0, thumbnails: [] });
+  });
+
   it("setPrep fills an empty estimate, never overwrites a manual one", () => {
     const prep = { type: "task/setPrep" as const, id: "t1", estimatedMinutes: 30, questions: ["Who signs?"], pitfalls: [] };
     expect(applyOptimisticChange(state(), prep).tasks[0].estimatedMinutes).toBe(30);
