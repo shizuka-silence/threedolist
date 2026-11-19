@@ -1,7 +1,7 @@
 "use client";
 
-import { Undo2 } from "lucide-react";
-import { useState } from "react";
+import { ChevronLeft, ChevronRight, Undo2, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { uncompleteTask, updateTaskReflection } from "@/app/actions/tasks";
 import type { Receipt } from "@/app/receipts";
 import { useDashboard } from "@/components/dashboard-provider";
@@ -23,7 +23,12 @@ export function ReceiptLog({ receipts: serverReceipts }: { receipts: Receipt[] }
       return {
         id: t.id, title: t.title, notes: null, reflection: null, projectId: t.projectId, projectName: project?.name ?? null,
         projectColor: project?.color ?? null, estimatedMinutes: t.estimatedMinutes, actualMinutes: t.actualMinutes,
-        completedAt: t.completedAt, scheduledStart: t.scheduledStart, sessions: [], proofs: [],
+        completedAt: t.completedAt, scheduledStart: t.scheduledStart, sessions: [],
+        // Same data the task card had; uploaded files other than images aren't tracked client-side until the next server load.
+        proofs: [
+          ...t.thumbnails.map((th) => ({ id: th.id, type: "image" as const, href: th.url, text: "", caption: null })),
+          ...t.writtenProofs.map((w) => ({ id: w.id, type: "text" as const, href: null, text: w.text, caption: null })),
+        ],
       };
     });
   const receipts = [...justCompleted, ...serverReceipts];
@@ -149,57 +154,74 @@ function Reflection({ taskId, initial }: { taskId: string; initial: string | nul
   );
 }
 
-// Native <dialog> gives Esc-to-close and focus handling; clicking the backdrop or image also closes it.
-function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
-  return (
-    <dialog
-      ref={(d) => { if (d && !d.open) d.showModal(); }}
-      onClose={onClose}
-      onClick={(e) => e.currentTarget.close()}
-      className="m-auto max-h-[95vh] max-w-[95vw] bg-transparent p-0 backdrop:bg-black/80"
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt="Proof, enlarged" className="max-h-[90vh] max-w-[95vw] rounded-md object-contain" />
-      <a
-        href={src} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
-        className="mt-2 block text-center text-sm text-white underline"
-      >
-        Open in new tab
-      </a>
-    </dialog>
-  );
-}
-
 // Proofs render only after a tap, so images aren't downloaded until asked for (saves mobile data).
+// Full-screen viewer in a native <dialog>: Esc-to-close, focus trapping and the backdrop come for free.
 function Proofs({ proofs }: { proofs: Receipt["proofs"] }) {
   const [open, setOpen] = useState(false);
-  const [enlarged, setEnlarged] = useState<string | null>(null);
+  const [index, setIndex] = useState(0);
+  const current = proofs[index];
+  const go = (i: number) => setIndex(Math.min(Math.max(i, 0), proofs.length - 1));
+  // Window-level so arrows keep working after the focused side button disappears at either end.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") setIndex((i) => Math.max(i - 1, 0));
+      if (e.key === "ArrowRight") setIndex((i) => Math.min(i + 1, proofs.length - 1));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, proofs.length]);
+  const side = "absolute inset-y-0 z-10 flex w-14 items-center justify-center bg-white/10 text-white hover:bg-white/20 sm:w-20";
   if (proofs.length === 0) return null;
-  if (!open) {
-    return (
-      <button type="button" onClick={() => setOpen(true)} className="h-9 w-fit rounded-md border px-3 text-sm font-medium">
+  return (
+    <>
+      <button type="button" onClick={() => { setIndex(0); setOpen(true); }} className="h-9 w-fit rounded-md border px-3 text-sm font-medium">
         Show proof ({proofs.length})
       </button>
-    );
-  }
-  return (
-    <div className="flex flex-wrap items-center justify-end gap-2">
-      {proofs.map((p) =>
-        p.type === "image" && p.href ? (
-          <button key={p.id} type="button" aria-label="Enlarge proof" onClick={() => setEnlarged(p.href)}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={p.href} alt={p.caption ?? "Proof"} className="h-16 w-16 rounded-md border object-cover" />
+      {open && (
+        <dialog
+          ref={(d) => { if (d && !d.open) d.showModal(); }}
+          onClose={() => setOpen(false)}
+          // Clicking empty space (not the proof, a link or a button) closes the viewer.
+          onClick={(e) => { if (!(e.target as HTMLElement).closest("img,a,button,p")) setOpen(false); }}
+          className="fixed inset-0 m-0 h-dvh max-h-none w-dvw max-w-none bg-black/90 p-0 text-white backdrop:bg-black/90"
+        >
+          {index > 0 && (
+            <button type="button" aria-label="Previous proof" onClick={() => go(index - 1)} className={`${side} left-0`}>
+              <ChevronLeft className="size-8" />
+            </button>
+          )}
+          {index < proofs.length - 1 && (
+            <button type="button" aria-label="Next proof" onClick={() => go(index + 1)} className={`${side} right-0`}>
+              <ChevronRight className="size-8" />
+            </button>
+          )}
+          <button
+            type="button" aria-label="Close" onClick={() => setOpen(false)}
+            className="absolute right-3 top-3 z-20 flex size-10 items-center justify-center rounded-md bg-black/50 hover:bg-black/70 sm:right-24"
+          >
+            <X className="size-5" />
           </button>
-        ) : p.type === "text" ? (
-          <p key={p.id} className="w-full whitespace-pre-wrap rounded-md border px-3 py-2 text-left text-sm">{p.text}</p>
-        ) : p.href ? (
-          <a key={p.id} href={p.href} target="_blank" rel="noreferrer" className="max-w-full truncate rounded-md border px-2 py-1 text-xs underline">
-            {p.text}
-          </a>
-        ) : null,
+          <div className="flex h-full flex-col px-16 pb-3 pt-14 sm:px-24">
+            <div className="flex min-h-0 flex-1 items-center justify-center">
+              {current.type === "image" && current.href ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={current.href} alt={current.caption ?? "Proof"} className="max-h-full max-w-full rounded-md object-contain" />
+              ) : current.type === "text" ? (
+                <p className="max-h-full w-full max-w-2xl overflow-y-auto whitespace-pre-wrap rounded-md bg-white/10 p-4 text-lg">{current.text}</p>
+              ) : (
+                <p className="text-lg">{current.text}</p>
+              )}
+            </div>
+            <div className="flex flex-col items-center gap-1 pt-3 text-sm">
+              {current.type !== "text" && current.href && (
+                <a href={current.href} target="_blank" rel="noreferrer" className="underline">Open in new tab</a>
+              )}
+              <span>{index + 1} / {proofs.length}</span>
+            </div>
+          </div>
+        </dialog>
       )}
-      <button type="button" onClick={() => setOpen(false)} className="h-9 rounded-md px-2 text-sm text-muted-foreground">Hide</button>
-      {enlarged && <Lightbox src={enlarged} onClose={() => setEnlarged(null)} />}
-    </div>
+    </>
   );
 }
