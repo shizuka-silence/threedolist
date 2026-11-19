@@ -57,9 +57,18 @@ export const taskSubtasks = pgTable("task_subtasks", {
 export const taskProofs = pgTable("task_proofs", {
   id: uuid("id").primaryKey().defaultRandom(),
   taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
-  type: text("type", { enum: ["image", "file", "url", "note"] }).notNull(),
+  // Proof only: "text" is a written proof (e.g. a summary), stored in storage_path_or_url. Reference notes live in task_notes.
+  type: text("type", { enum: ["image", "file", "text"] }).notNull(),
   storagePathOrUrl: text("storage_path_or_url").notNull(),
   caption: text("caption"),
+  createdAt: createdAt(),
+});
+
+// Reference info pooled on a task (notes, links). Deliberately not proof: never gates completion.
+export const taskNotes = pgTable("task_notes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: uuid("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  text: text("text").notNull(),
   createdAt: createdAt(),
 });
 

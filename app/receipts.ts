@@ -16,7 +16,7 @@ export type Receipt = {
   completedAt: string | null; // ISO
   scheduledStart: string | null; // ISO; where it sat on the calendar
   sessions: { startedAt: string; endedAt: string }[]; // real timer runs, for the Day calendar
-  proofs: { id: string; type: "image" | "file" | "url" | "note"; href: string | null; text: string; caption: string | null }[];
+  proofs: { id: string; type: "image" | "file" | "text"; href: string | null; text: string; caption: string | null }[];
 };
 
 // Completed tasks, newest first, each with its project and proofs (private files get 1-hour signed URLs).
@@ -78,8 +78,8 @@ export async function loadReceipts(supabase: Awaited<ReturnType<typeof createCli
       .map((p) => ({
         id: p.id,
         type: p.type,
-        href: p.type === "url" ? p.value : hrefById.get(p.id) ?? null,
-        text: p.type === "note" || p.type === "url" ? p.value : p.caption ?? "File",
+        href: hrefById.get(p.id) ?? null,
+        text: p.type === "text" ? p.value : p.caption ?? "File",
         caption: p.caption,
       })),
   }));

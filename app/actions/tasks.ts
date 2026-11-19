@@ -2,10 +2,10 @@
 
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { projects, taskProofs, taskSubtasks, tasks, timeLogs } from "@/db/schema";
+import { projects, taskNotes, taskProofs, taskSubtasks, tasks, timeLogs } from "@/db/schema";
 import { generateTaskPrep } from "@/lib/ai";
 import { isUuid, toClientTask } from "@/lib/dashboard-rows";
-import type { OptimisticSubtask, OptimisticTask, TaskSchedule, TextProof } from "@/lib/optimistic-rules";
+import type { OptimisticSubtask, OptimisticTask, TaskSchedule, TextItem } from "@/lib/optimistic-rules";
 import {
   assertCanComplete, assertValidLoggedMinutes, calculateLoggedMinutes, normalizeAiPrepOutput, normalizeTaskTitle, resolveAiEstimate, type AiPrepParts,
 } from "@/lib/task-rules";
@@ -19,6 +19,7 @@ import { createClient } from "@/lib/supabase/server";
 type Result = { error?: string };
 
 const PROOF_BUCKET = "proof-uploads";
+const MAX_WRITTEN_PROOF = 10_000;
 const AI_PREP_COOLDOWN_MS = 15_000;
 
 async function requireUser() {
@@ -76,9 +77,9 @@ export async function createTask(input: {
   return { task: toClientTask(row) };
 }
 
-// FormData because images are sent as files. Fields: taskId, type ("image" | "text"), file | text, caption?
+// FormData because images are sent as files. Fields: taskId, type ("image" | "text" = written proof), file | text, caption?
 // Returns a signed thumbnail URL for image proofs so the card can show it without a re-render.
-export async function addTaskProof(formData: FormData): Promise<Result & { thumbnail?: { id: string; url: string }; textProof?: TextProof }> {
+export async function addTaskProof(formData: FormData): Promise<Result & { thumbnail?: { id: string; url: string }; written?: TextItem }> {
   const { supabase, user } = await requireUser();
   if (!user) return { error: "Not signed in." };
 
@@ -110,10 +111,10 @@ export async function addTaskProof(formData: FormData): Promise<Result & { thumb
     return { thumbnail: signed ? { id: proof.id, url: signed.signedUrl } : undefined };
   } else {
     const text = String(formData.get("text") ?? "").trim();
-    if (!text) return { error: "Type a note or paste a link first." };
-    const type = /^https?:\/\//i.test(text) ? "url" : "note";
-    const [proof] = await db.insert(taskProofs).values({ taskId, type, storagePathOrUrl: text, caption }).returning({ id: taskProofs.id });
-    return { textProof: { id: proof.id, type, text } };
+    if (!text) return { error: "Write something first." };
+    if (text.length > MAX_WRITTEN_PROOF) return { error: `Keep it under ${MAX_WRITTEN_PROOF} characters.` };
+    const [proof] = await db.insert(taskProofs).values({ taskId, type: "text", storagePathOrUrl: text, caption }).returning({ id: taskProofs.id });
+    return { written: { id: proof.id, text } };
   }
 }
 
@@ -501,6 +502,36 @@ export async function addSubtask(taskId: string, label: string, id?: string): Pr
     .values({ id, taskId, label: trimmed, source: "user" })
     .returning({ id: taskSubtasks.id, label: taskSubtasks.label, isCompleted: taskSubtasks.isCompleted, source: taskSubtasks.source });
   return { subtask };
+}
+
+// Reference notes/links for the task. Not proof: they never count toward completion.
+export async function addTaskNote(taskId: string, text: string, id?: string): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+  const trimmed = text.trim();
+  if (!trimmed) return { error: "Type a note or paste a link first." };
+  if (trimmed.length > MAX_WRITTEN_PROOF) return { error: `Keep it under ${MAX_WRITTEN_PROOF} characters.` };
+  if (id && !isUuid(id)) return { error: "Invalid id." };
+  if (!(await findOwnedTask(user.id, taskId))) return { error: "Task not found." };
+
+  await db.insert(taskNotes).values({ id, taskId, text: trimmed });
+  return {};
+}
+
+export async function removeTaskNote(noteId: string): Promise<Result> {
+  const { user } = await requireUser();
+  if (!user) return { error: "Not signed in." };
+  if (!isUuid(noteId)) return { error: "Invalid id." };
+
+  const [owned] = await db
+    .select({ id: taskNotes.id })
+    .from(taskNotes)
+    .innerJoin(tasks, eq(tasks.id, taskNotes.taskId))
+    .where(and(eq(taskNotes.id, noteId), eq(tasks.userId, user.id)));
+  if (!owned) return { error: "Note not found." };
+
+  await db.delete(taskNotes).where(eq(taskNotes.id, noteId));
+  return {};
 }
 
 export async function removeSubtask(subtaskId: string): Promise<Result> {

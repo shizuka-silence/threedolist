@@ -3,14 +3,14 @@
 import imageCompression from "browser-image-compression";
 import { useEffect, useRef, useState } from "react";
 import {
-  addSubtask, addTaskProof, completeTask, deleteTask, removeSubtask, removeTaskProof, runAiTaskPrep, startTaskTimer, stopTaskTimer, toggleSubtask,
+  addSubtask, addTaskProof, completeTask, deleteTask, addTaskNote, removeSubtask, removeTaskNote, removeTaskProof, runAiTaskPrep, startTaskTimer, stopTaskTimer, toggleSubtask,
   logTaskMinutes, updateTaskEstimate, updateTaskSchedule, updateTaskTitle,
 } from "@/app/actions/tasks";
 import { assignTaskToProject } from "@/app/actions/projects";
 import { useDashboard } from "@/components/dashboard-provider";
 import { Button } from "@/components/ui/button";
 import { formatDeadline, fromDatetimeLocal, isOverdue, toDatetimeLocal } from "@/lib/deadline";
-import type { TaskSchedule, TextProof } from "@/lib/optimistic-rules";
+import type { TaskSchedule, TextItem } from "@/lib/optimistic-rules";
 import { calculateLoggedMinutes } from "@/lib/task-rules";
 
 // Elements that keep their own double-click behavior instead of toggling the card.
@@ -27,7 +27,8 @@ type Props = TaskSchedule & {
   activeTimerStartedAt: string | null; // ISO
   proofCount: number;
   thumbnails: { id: string; url: string }[];
-  textProofs: TextProof[];
+  writtenProofs: TextItem[];
+  notes: TextItem[];
   aiClarifyingQuestions: string[] | null;
   subtasks: { id: string; label: string; isCompleted: boolean; source: "user" | "ai_pitfall" }[];
   projectId: string | null;
@@ -38,14 +39,15 @@ type Props = TaskSchedule & {
 };
 
 export function TaskCard({
-  id, title, completionType, estimatedMinutes, actualMinutes, activeTimerStartedAt, proofCount, thumbnails, textProofs,
+  id, title, completionType, estimatedMinutes, actualMinutes, activeTimerStartedAt, proofCount, thumbnails, writtenProofs, notes,
   aiClarifyingQuestions, subtasks, projectId, projects, deadline, repeatEvery, repeatWeekdays, repeatUnit, repeatUntil, hideProject, active, onActivate,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [repeatMode, setRepeatMode] = useState<"weekdays" | "every">(repeatWeekdays?.length ? "weekdays" : "every");
   const [added, setAdded] = useState(0); // extra minutes added when stopping the timer
   const [logMinutes, setLogMinutes] = useState("");
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(""); // reference note/link draft
+  const [draft, setDraft] = useState(""); // written-proof draft
   const [subtaskLabel, setSubtaskLabel] = useState("");
   const [aiParts, setAiParts] = useState({ estimate: false, questions: false, pitfalls: false });
   // Instant actions change dashboard state at once; uploads and AI wait for the server, so they show a busy state.
@@ -60,6 +62,9 @@ export function TaskCard({
   const pointerDown = useRef<{ x: number; y: number } | null>(null);
   const card = useRef<HTMLDivElement>(null);
   const isProof = completionType === "proof";
+  // Proof tasks need a saved proof, and unsaved written text blocks completion so it can't be forgotten.
+  const completeBlocked = isProof && (proofCount === 0 || draft.trim() !== "");
+  const completeHint = draft.trim() !== "" ? "Save your written proof first" : "Add proof first";
 
   const startedAt = activeTimerStartedAt ? new Date(activeTimerStartedAt) : null;
   const elapsedMs = startedAt && now ? Math.max(0, now - startedAt.getTime()) : 0;
@@ -111,17 +116,30 @@ export function TaskCard({
 
   function addNote(event: React.FormEvent) {
     event.preventDefault();
+    const text = note.trim();
+    if (!text) return;
+    setNote("");
+    const item = { id: crypto.randomUUID(), text };
+    run({ type: "task/addNote", taskId: id, note: item }, async () => {
+      const result = await addTaskNote(id, text, item.id);
+      if (result.error) setNote((current) => current || text); // don't lose the text on failure
+      return result;
+    });
+  }
+
+  function saveWrittenProof() {
     const formData = new FormData();
     formData.set("taskId", id);
     formData.set("type", "text");
-    formData.set("text", note);
-    const saved = note;
-    setNote("");
-    run({ type: "task/addProof", id }, async () => {
+    formData.set("text", draft);
+    const saved = draft;
+    setDraft("");
+    // Waits for the server (null change) because the new row's id is needed before it can be removed.
+    run(null, async () => {
       const result = await addTaskProof(formData);
-      if (result.error) setNote((current) => current || saved);
+      if (result.error) setDraft((current) => current || saved);
       return result;
-    }, (result) => [{ type: "task/addProof", id, textProof: result.textProof }]);
+    }, (result) => [{ type: "task/addProof", id, written: result.written }]);
   }
 
   function logTime(event: React.FormEvent) {
@@ -255,8 +273,8 @@ export function TaskCard({
         <button
           type="button"
           aria-label="Mark complete"
-          title={isProof && proofCount === 0 ? "Add proof first" : "Mark complete"}
-          disabled={isProof && proofCount === 0}
+          title={completeBlocked ? completeHint : "Mark complete"}
+          disabled={completeBlocked}
           onClick={completeNow}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-base enabled:hover:bg-primary enabled:hover:text-primary-foreground disabled:opacity-30"
         >
@@ -432,20 +450,20 @@ export function TaskCard({
               />
               <Button type="submit" variant="outline">Add</Button>
             </form>
-            {textProofs.length > 0 && (
+            {notes.length > 0 && (
               <ul className="flex flex-col gap-1">
-                {textProofs.map((p) => (
-                  <li key={p.id} className="flex items-center gap-2 text-sm">
-                    {p.type === "url" ? (
-                      <a href={p.text} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate underline">{p.text}</a>
+                {notes.map((n) => (
+                  <li key={n.id} className="flex items-center gap-2 text-sm">
+                    {/^https?:\/\//i.test(n.text) ? (
+                      <a href={n.text} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate underline">{n.text}</a>
                     ) : (
-                      <span className="min-w-0 flex-1 truncate">{p.text}</span>
+                      <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{n.text}</span>
                     )}
                     <button
                       type="button"
                       aria-label="Remove note"
                       className="px-1 text-muted-foreground hover:text-foreground"
-                      onClick={() => run({ type: "task/removeProof", id, proofId: p.id }, () => removeTaskProof(p.id))}
+                      onClick={() => run({ type: "task/removeNote", taskId: id, noteId: n.id }, () => removeTaskNote(n.id))}
                     >
                       ×
                     </button>
@@ -453,18 +471,16 @@ export function TaskCard({
                 ))}
               </ul>
             )}
-            {isProof && (
-              <form onSubmit={addNote} className="flex gap-2">
-                <input
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="Note or link"
-                  aria-label="Proof note or link"
-                  className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-base"
-                />
-                <Button type="submit" variant="outline">Add</Button>
-              </form>
-            )}
+            <form onSubmit={addNote} className="flex gap-2">
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Note or link (reference, not proof)"
+                aria-label="Task note or link"
+                className="h-9 min-w-0 flex-1 rounded-md border bg-background px-3 text-base"
+              />
+              <Button type="submit" variant="outline">Add</Button>
+            </form>
           </div>
 
           {/* 3. AI Prep */}
@@ -605,6 +621,37 @@ export function TaskCard({
               <Button type="button" variant="outline" size="lg" disabled={uploading} onClick={() => fileInput.current?.click()}>
                 {uploading ? "Uploading photo…" : "Add photo (or Ctrl+V)"}
               </Button>
+              {writtenProofs.length > 0 && (
+                <ul className="flex flex-col gap-1">
+                  {writtenProofs.map((w) => (
+                    <li key={w.id} className="flex items-start gap-2 rounded-md border px-2 py-1 text-sm">
+                      <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{w.text}</span>
+                      <button
+                        type="button"
+                        aria-label="Remove written proof"
+                        className="px-1 text-muted-foreground hover:text-foreground"
+                        onClick={() => run({ type: "task/removeProof", id, proofId: w.id }, () => removeTaskProof(w.id))}
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Written proof, e.g. a short summary of what you read"
+                aria-label="Written proof"
+                rows={3}
+                className="min-w-0 rounded-md border bg-background px-3 py-2 text-base"
+              />
+              {draft.trim() !== "" && (
+                <>
+                  <p className="text-sm text-muted-foreground">Save your written proof first, or clear it.</p>
+                  <Button type="button" variant="outline" onClick={saveWrittenProof}>Save written proof</Button>
+                </>
+              )}
             </div>
           )}
 
@@ -612,7 +659,7 @@ export function TaskCard({
           <div className="flex flex-col gap-2 border-t pt-3">
             <Button
               size="lg"
-              disabled={isProof && proofCount === 0}
+              disabled={completeBlocked}
               // Leaves the list at once; if the server refuses (e.g. no proof), it comes back with the error banner.
               onClick={completeNow}
             >

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { LogOut } from "lucide-react";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
@@ -8,7 +8,7 @@ import { DashboardProvider } from "@/components/dashboard-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { SubmitButton } from "@/components/submit-button";
 import { db } from "@/db";
-import { projectFiles, projects, taskProofs, taskSubtasks, tasks, triageItems } from "@/db/schema";
+import { projectFiles, projects, taskNotes, taskProofs, taskSubtasks, tasks, triageItems } from "@/db/schema";
 import { loadReceipts } from "@/app/receipts";
 import { toClientProjectFile, toClientTask, toClientTriageItem } from "@/lib/dashboard-rows";
 import type { OptimisticState } from "@/lib/optimistic-rules";
@@ -36,7 +36,7 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
   const proofCount = sql<number>`(select count(*)::int from task_proofs where task_proofs.task_id = tasks.id)`;
 
   // None of these queries needs another's result, so they run together instead of one after another.
-  const [rows, imageProofs, textProofRows, subtaskRows, pendingTriage, projectRows, fileRows, receipts] = await Promise.all([
+  const [rows, imageProofs, writtenRows, noteRows, subtaskRows, pendingTriage, projectRows, fileRows, receipts] = await Promise.all([
     db
       .select({
         id: tasks.id,
@@ -65,11 +65,17 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
       .innerJoin(tasks, eq(tasks.id, taskProofs.taskId))
       .where(and(eq(tasks.userId, user.id), eq(taskProofs.type, "image"))),
     db
-      .select({ id: taskProofs.id, taskId: taskProofs.taskId, type: taskProofs.type, text: taskProofs.storagePathOrUrl })
+      .select({ id: taskProofs.id, taskId: taskProofs.taskId, text: taskProofs.storagePathOrUrl })
       .from(taskProofs)
       .innerJoin(tasks, eq(tasks.id, taskProofs.taskId))
-      .where(and(eq(tasks.userId, user.id), inArray(taskProofs.type, ["note", "url"])))
+      .where(and(eq(tasks.userId, user.id), eq(taskProofs.type, "text")))
       .orderBy(taskProofs.createdAt),
+    db
+      .select({ id: taskNotes.id, taskId: taskNotes.taskId, text: taskNotes.text })
+      .from(taskNotes)
+      .innerJoin(tasks, eq(tasks.id, taskNotes.taskId))
+      .where(eq(tasks.userId, user.id))
+      .orderBy(taskNotes.createdAt),
     db
       .select({
         id: taskSubtasks.id,
@@ -135,7 +141,8 @@ async function Dashboard({ searchParams }: { searchParams: Promise<{ tab?: strin
         toClientTask(t, {
           proofCount: t.proofCount,
           thumbnails: thumbnailsByTask.get(t.id) ?? [],
-          textProofs: textProofRows.filter((p) => p.taskId === t.id).map(({ id, type, text }) => ({ id, type: type as "note" | "url", text })),
+          writtenProofs: writtenRows.filter((p) => p.taskId === t.id).map(({ id, text }) => ({ id, text })),
+          notes: noteRows.filter((n) => n.taskId === t.id).map(({ id, text }) => ({ id, text })),
           subtasks: subtaskRows.filter((s) => s.taskId === t.id),
         }),
       ),

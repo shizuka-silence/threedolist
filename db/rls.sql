@@ -56,6 +56,13 @@ create policy "owner full access" on task_proofs
   using (exists (select 1 from tasks t where t.id = task_proofs.task_id and t.user_id = (select auth.uid())))
   with check (exists (select 1 from tasks t where t.id = task_proofs.task_id and t.user_id = (select auth.uid())));
 
+alter table task_notes enable row level security;
+drop policy if exists "owner full access" on task_notes;
+create policy "owner full access" on task_notes
+  for all to authenticated
+  using (exists (select 1 from tasks t where t.id = task_notes.task_id and t.user_id = (select auth.uid())))
+  with check (exists (select 1 from tasks t where t.id = task_notes.task_id and t.user_id = (select auth.uid())));
+
 alter table time_logs enable row level security;
 drop policy if exists "owner full access" on time_logs;
 create policy "owner full access" on time_logs

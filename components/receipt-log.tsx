@@ -190,8 +190,8 @@ function Proofs({ proofs }: { proofs: Receipt["proofs"] }) {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={p.href} alt={p.caption ?? "Proof"} className="h-16 w-16 rounded-md border object-cover" />
           </button>
-        ) : p.type === "note" ? (
-          <span key={p.id} className="rounded-md border px-2 py-1 text-xs">{p.text}</span>
+        ) : p.type === "text" ? (
+          <p key={p.id} className="w-full whitespace-pre-wrap rounded-md border px-3 py-2 text-left text-sm">{p.text}</p>
         ) : p.href ? (
           <a key={p.id} href={p.href} target="_blank" rel="noreferrer" className="max-w-full truncate rounded-md border px-2 py-1 text-xs underline">
             {p.text}
